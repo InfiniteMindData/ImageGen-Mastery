@@ -36,7 +36,7 @@ class ProviderTests(unittest.TestCase):
 
     def test_openai_sends_images_request_and_decodes_generated_png(self):
         self.respond({"created": 1710000000, "data": [{"b64_json": self.encoded_png}]})
-        result = providers.generate("openai", "gpt-image-1", "A café in ink")
+        result = providers.generate("openai", "gpt-image-1", "A café in ink", authorized=True)
         self.assertEqual(result, self.png)
         request = self.http.call_args.args[0]
         self.assertEqual(request.full_url, "https://api.openai.com/v1/images/generations")
@@ -53,7 +53,7 @@ class ProviderTests(unittest.TestCase):
             {"text": "Here is the image"},
             {"inlineData": {"mimeType": "image/png", "data": self.encoded_png}},
         ]}, "finishReason": "STOP"}]})
-        result = providers.generate("google", "gemini-3.1-flash-lite-image", "A café in ink")
+        result = providers.generate("google", "gemini-3.1-flash-lite-image", "A café in ink", authorized=True)
         self.assertEqual(result, self.png)
         request = self.http.call_args.args[0]
         self.assertEqual(request.full_url, "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-image:generateContent")
@@ -66,7 +66,7 @@ class ProviderTests(unittest.TestCase):
         self.respond({"candidates": [{"content": {"parts": [
             {"inlineData": {"mimeType": "image/jpeg", "data": jpeg}},
         ]}}]})
-        with Image.open(io.BytesIO(providers.generate("google", "model", "test"))) as result:
+        with Image.open(io.BytesIO(providers.generate("google", "model", "test", authorized=True))) as result:
             self.assertEqual(result.format, "PNG")
             self.assertEqual(result.size, (8, 8))
             self.assertGreater(result.getpixel((0, 0))[0], 250)
@@ -83,13 +83,13 @@ class ProviderTests(unittest.TestCase):
         for data in images:
             self.respond({"data": [{"b64_json": base64.b64encode(data).decode()}]})
             with self.subTest(size=len(data)), self.assertRaises(providers.ProviderError):
-                providers.generate("openai", "model", "test")
+                providers.generate("openai", "model", "test", authorized=True)
 
     def test_missing_credentials_fail_before_network_access(self):
         for provider, variable in (("openai", "OPENAI_API_KEY"), ("google", "GEMINI_API_KEY")):
             with self.subTest(provider=provider), patch.dict(os.environ, {}, clear=True):
                 with self.assertRaisesRegex(providers.ProviderError, variable):
-                    providers.generate(provider, "example", "A still life")
+                    providers.generate(provider, "example", "A still life", authorized=True)
                 self.http.assert_not_called()
 
     def test_invalid_model_prompt_or_provider_fails_before_network_access(self):
@@ -99,7 +99,7 @@ class ProviderTests(unittest.TestCase):
             ("unknown", "model", "test"),
         ]:
             with self.subTest(args=args), self.assertRaises(providers.ProviderError):
-                providers.generate(*args)
+                providers.generate(*args, authorized=True)
         self.http.assert_not_called()
 
     def test_http_and_network_failures_hide_sensitive_error_text(self):
@@ -111,7 +111,7 @@ class ProviderTests(unittest.TestCase):
         for failure in failures:
             self.http.side_effect = failure
             with self.subTest(failure=type(failure)), self.assertRaises(providers.ProviderError) as caught:
-                providers.generate("openai", "gpt-image-1", "test")
+                providers.generate("openai", "gpt-image-1", "test", authorized=True)
             self.assertNotIn(secret, str(caught.exception))
 
     def test_malformed_missing_filtered_or_invalid_images_raise_provider_errors(self):
@@ -126,4 +126,9 @@ class ProviderTests(unittest.TestCase):
         ]:
             self.http.return_value = io.BytesIO(body)
             with self.subTest(provider=provider, body=body[:32]), self.assertRaises(providers.ProviderError):
-                providers.generate(provider, "example", "test")
+                providers.generate(provider, "example", "test", authorized=True)
+
+    def test_plain_generation_requires_explicit_authorization(self):
+        with self.assertRaisesRegex(ValueError, "authorize-paid"):
+            providers.generate("openai", "model", "test")
+        self.http.assert_not_called()

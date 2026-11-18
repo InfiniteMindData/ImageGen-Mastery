@@ -47,7 +47,7 @@ imagegen-mastery generate examples/sign-brief.json --provider google --model gem
   --reference examples/fixtures/reference.png --aspect-ratio 16:9 --size 2K --output variation.png --authorize-paid
 ```
 
-New uploads, inspection, advanced generation and automated revisions require `--authorize-paid`. For backwards compatibility, invoking the original text-only `generate BRIEF --provider ... --model ... --output ...` directly still authorizes exactly one request. Agents need the user's approval before invoking either form. Plain generation accepts user-selected model IDs as before. Advanced options require an entry in the model registry. Credentials are read from the environment. New image uploads use re-encoded pixels with metadata removed.
+Every paid command requires explicit user consent and the flag `--authorize-paid`. Existing text-only generation scripts must add that flag. Python callers pass `authorized=True`. Plain generation accepts user-selected model IDs as before. Advanced options require an entry in the model registry. Credentials are read from the environment. New image uploads use re-encoded pixels with metadata removed.
 
 ## Controlled revisions
 

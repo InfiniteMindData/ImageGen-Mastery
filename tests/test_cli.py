@@ -49,7 +49,7 @@ class CommandLineTests(unittest.TestCase):
             output = Path(directory) / "keep.png"
             output.write_bytes(b"keep")
             args = ["generate", str(EXAMPLE), "--provider", "google",
-                    "--model", "test", "--output", str(output)]
+                    "--model", "test", "--output", str(output), "--authorize-paid"]
             self.assertEqual(main(args), 1)
             self.assertEqual(output.read_bytes(), b"keep")
             generate.assert_not_called()
@@ -59,6 +59,6 @@ class CommandLineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "new.png"
             self.assertEqual(main(["generate", str(EXAMPLE), "--provider", "google",
-                                   "--model", "test", "--output", str(output)]), 1)
+                                   "--model", "test", "--output", str(output), "--authorize-paid"]), 1)
             self.assertFalse(output.exists())
             generate.assert_called_once()

@@ -8,7 +8,7 @@ from pathlib import Path
 from .capabilities import ImageSettings, capabilities
 from .editing import render
 from .evaluation import evaluate
-from .inspection import inspect_image
+from .inspection import inspect_image, require_authorization
 from .prompt import optimize, review_requirements
 from .references import attachment_note, bind_references
 from .reporting import make_report
@@ -103,12 +103,13 @@ def main(argv=None):
             settings = ImageSettings(getattr(args, "source", None), refs,
                                      getattr(args, "mask", None), args.aspect_ratio, args.size, args.quality)
             prompt += attachment_note(labels, source=settings.source is not None)
+            require_authorization(args.authorize_paid)
             # Reserve the destination before sending a billable request.
             destination = args.output.open("xb")
             try:
                 with destination as stream:
                     if args.command == "generate" and settings == ImageSettings():
-                        stream.write(generate(args.provider, args.model, prompt))
+                        stream.write(generate(args.provider, args.model, prompt, authorized=args.authorize_paid))
                     else:
                         stream.write(render(args.provider, args.model, prompt, settings,
                                             authorized=args.authorize_paid))

@@ -123,8 +123,10 @@ def _as_png(encoded: str, formats: list[str]) -> bytes:
         raise ProviderError("The image provider returned invalid image data.") from None
 
 
-def generate(provider: str, model: str, prompt: str) -> bytes:
+def generate(provider: str, model: str, prompt: str, *, authorized: bool = False) -> bytes:
     """Generate one still PNG with a GPT Image or Gemini image model."""
+    if authorized is not True:
+        raise ValueError("Generation may incur charges. Pass --authorize-paid to approve.")
     adapters = {"openai": _openai, "google": _google}
     if provider not in adapters:
         raise ProviderError("Choose an image provider from openai or google.")
