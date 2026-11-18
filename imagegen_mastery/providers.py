@@ -14,6 +14,7 @@ import os
 import re
 import struct
 from http.client import HTTPException
+from typing import Callable
 from urllib import request
 from urllib.error import HTTPError
 
@@ -42,12 +43,15 @@ def _credential(variable: str) -> str:
     return key
 
 
-def _post(url: str, headers: dict, payload: dict) -> dict:
+def _post(url: str, headers: dict, payload: dict,
+          before_send: Callable[[], None] | None = None) -> dict:
     req = request.Request(
         url, data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json", **headers},
         method="POST",
     )
+    if before_send is not None:
+        before_send()
     try:
         with request.build_opener(_NoRedirect()).open(req, timeout=300) as response:
             body = response.read(_MAX_RESPONSE_BYTES + 1)
@@ -83,6 +87,10 @@ def _google(model: str, prompt: str) -> bytes:
             "generationConfig": {"responseModalities": ["IMAGE"]},
         },
     )
+    return _google_image(result)
+
+
+def _google_image(result: dict) -> bytes:
     for part in result["candidates"][0]["content"]["parts"]:
         if isinstance(part, dict) and not part.get("thought") and "inlineData" in part:
             return _as_png(part["inlineData"]["data"], ["PNG", "JPEG", "WEBP"])

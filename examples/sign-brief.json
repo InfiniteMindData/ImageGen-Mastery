@@ -1,0 +1,5 @@
+{
+  "intent": "A cream storefront sign with the exact word OPEN in dark blue.",
+  "constraints": ["A teal square sits to the left of the lettering."],
+  "locked_attributes": ["Keep OPEN uppercase.", "Keep the cream background."]
+}

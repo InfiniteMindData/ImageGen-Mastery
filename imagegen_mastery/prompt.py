@@ -62,14 +62,15 @@ def optimize(brief: dict) -> str:
     Raise ValueError with the field location when the brief is malformed.
     """
     directions = ("composition", "style", "lighting")
-    optional = (*directions, "constraints", "avoid", "references", "revisions")
+    optional = (*directions, "constraints", "avoid", "references", "revisions", "locked_attributes")
     _object(brief, "brief", ("intent",), optional)
     sections = [_text(brief["intent"], "intent")]
     for key in directions:
         if key in brief:
             sections.append(f"{key.capitalize()}\n{_text(brief[key], key)}")
     sections.extend(_reference_notes(brief.get("references", [])))
-    for key, title in (("constraints", "Requirements"), ("avoid", "Exclude these elements")):
+    for key, title in (("constraints", "Requirements"), ("avoid", "Exclude these elements"),
+                       ("locked_attributes", "Preserve these locked attributes")):
         lines = [
             "- " + _text(item, f"{key}[{index}]")
             for index, item in _items(brief.get(key, []), key)
@@ -78,3 +79,18 @@ def optimize(brief: dict) -> str:
             sections.append("\n".join([title, *lines]))
     sections.extend(_revision_notes(brief.get("revisions", [])))
     return "\n\n".join(sections)
+
+
+def review_requirements(brief: dict) -> list[str]:
+    # Bind every defect to an original instruction; model output cannot add an edit goal.
+    items = [brief["intent"]]
+    for key in ("style", "lighting", "composition"):
+        if key in brief:
+            items.append(brief[key])
+    items.extend(brief.get("constraints", []))
+    items.extend("Exclude: " + item for item in brief.get("avoid", []))
+    for ref in brief.get("references", []):
+        for anchor in ref["anchors"]:
+            items.append(f'{ref["image"]}: {anchor["aspect"]} — {anchor["detail"]}')
+    items.extend(item["change"] for item in brief.get("revisions", []))
+    return items
