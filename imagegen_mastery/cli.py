@@ -10,6 +10,7 @@ from .editing import render
 from .evaluation import evaluate
 from .inspection import inspect_image
 from .prompt import optimize
+from .reporting import make_report
 from .providers import generate
 from .workflow import run_loop
 
@@ -26,6 +27,15 @@ def main(argv=None):
     review = commands.add_parser("evaluate", help="measure an image and prepare a review")
     review.add_argument("image", type=Path)
     review.add_argument("--reference", type=Path)
+    report = commands.add_parser("report", help="write an offline comparison report")
+    report.add_argument("image", type=Path)
+    report.add_argument("--reference", type=Path, required=True)
+    report.add_argument("--output-dir", type=Path, required=True)
+    report.add_argument("--ssim", action="store_true")
+    report.add_argument("--perceptual", action="store_true")
+    report.add_argument("--require-text", action="append", default=[])
+    report.add_argument("--region", type=float, nargs=4, action="append", default=[],
+                        metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"))
     vision = commands.add_parser("inspect", help="inspect actual pixels via a paid vision model")
     vision.add_argument("image", type=Path)
     vision.add_argument("--brief", type=Path)
@@ -63,6 +73,10 @@ def main(argv=None):
             print(_brief(args.brief))
         elif args.command == "evaluate":
             print(json.dumps(evaluate(args.image, args.reference), indent=2))
+        elif args.command == "report":
+            make_report(args.image, args.reference, args.output_dir, ssim=args.ssim, perceptual=args.perceptual,
+                        regions=args.region, required_text=args.require_text)
+            print(args.output_dir / "report.html")
         elif args.command == "inspect":
             requirements = [_brief(args.brief)] if args.brief else ["Inspect visible rendering defects."]
             print(json.dumps(inspect_image(args.image, requirements, references=args.reference,
