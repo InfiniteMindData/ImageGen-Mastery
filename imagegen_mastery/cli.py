@@ -1,10 +1,12 @@
-"""Command line entry points. Only generate contacts an image provider."""
+"""Command line entry points. Offline by default."""
 
 import argparse
 import json
 import sys
 from pathlib import Path
 
+from .capabilities import ImageSettings, capabilities
+from .editing import render
 from .evaluation import evaluate
 from .inspection import inspect_image
 from .prompt import optimize
@@ -30,10 +32,20 @@ def main(argv=None):
     vision.add_argument("--lock", action="append", default=[])
     vision.add_argument("--authorize-paid", action="store_true")
     gen = commands.add_parser("generate", help="send a compiled brief to a paid API")
-    gen.add_argument("brief", type=Path)
-    gen.add_argument("--provider", choices=("openai", "google"), required=True)
-    gen.add_argument("--model", required=True)
-    gen.add_argument("--output", type=Path, required=True)
+    edit = commands.add_parser("edit", help="edit a source image using a paid provider")
+    edit.add_argument("source", type=Path)
+    edit.add_argument("--mask", type=Path)
+    commands.add_parser("capabilities", help="list registered image models and settings")
+    for cmd in (gen, edit):
+        cmd.add_argument("brief", type=Path)
+        cmd.add_argument("--provider", choices=("openai", "google"), required=True)
+        cmd.add_argument("--model", required=True)
+        cmd.add_argument("--output", type=Path, required=True)
+        cmd.add_argument("--reference", type=Path, action="append", default=[])
+        cmd.add_argument("--aspect-ratio")
+        cmd.add_argument("--size")
+        cmd.add_argument("--quality")
+        cmd.add_argument("--authorize-paid", action="store_true")
     args = parser.parse_args(argv)
     try:
         if args.command == "optimize":
@@ -44,13 +56,21 @@ def main(argv=None):
             requirements = [_brief(args.brief)] if args.brief else ["Inspect visible rendering defects."]
             print(json.dumps(inspect_image(args.image, requirements, references=args.reference,
                                            locks=args.lock, authorized=args.authorize_paid), indent=2))
+        elif args.command == "capabilities":
+            print(json.dumps(capabilities(), indent=2))
         else:
+            settings = ImageSettings(getattr(args, "source", None), tuple(args.reference),
+                                     getattr(args, "mask", None), args.aspect_ratio, args.size, args.quality)
             prompt = _brief(args.brief)
             # Reserve the destination before sending a billable request.
             destination = args.output.open("xb")
             try:
                 with destination as stream:
-                    stream.write(generate(args.provider, args.model, prompt))
+                    if args.command == "generate" and settings == ImageSettings():
+                        stream.write(generate(args.provider, args.model, prompt))
+                    else:
+                        stream.write(render(args.provider, args.model, prompt, settings,
+                                            authorized=args.authorize_paid))
             except BaseException:
                 args.output.unlink(missing_ok=True)
                 raise

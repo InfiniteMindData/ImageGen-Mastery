@@ -83,6 +83,10 @@ def _google(model: str, prompt: str) -> bytes:
             "generationConfig": {"responseModalities": ["IMAGE"]},
         },
     )
+    return _google_image(result)
+
+
+def _google_image(result: dict) -> bytes:
     for part in result["candidates"][0]["content"]["parts"]:
         if isinstance(part, dict) and not part.get("thought") and "inlineData" in part:
             return _as_png(part["inlineData"]["data"], ["PNG", "JPEG", "WEBP"])
