@@ -92,3 +92,8 @@ class LocalizationTests(unittest.TestCase):
             with self.subTest(options=bad), self.assertRaises(ValueError):
                 self.run_edit(**bad)
         self.assertEqual(pixel_box((13, 10), [.25, .25, .75, .75]), (3, 2, 10, 8))
+
+    def test_low_alpha_distinct_color_survives_noop_check(self):
+        self.base.paste((0, 0, 0, 1), (0, 0, 12, 12))
+        self.patch.paste((1, 0, 0, 1), (0, 0, 12, 12))
+        self.assertEqual(self.run_edit(), "changed")

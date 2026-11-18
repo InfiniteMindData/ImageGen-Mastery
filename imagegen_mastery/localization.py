@@ -154,10 +154,14 @@ def localize(source: Path, proposed: Path, bounds: Sequence[float], target: Path
     after = _blend(before, patch.crop(box).convert("RGBA"), _mask(box, base.size, holes, feather))
     canvas.paste(after, box)
     canvas.save(target, format="PNG")
-    # Premultiplication ignores hidden RGB and includes coverage changes.
-    delta = ImageChops.difference(before.convert("RGBa"), after.convert("RGBa"))
-    if not delta.getbbox(alpha_only=False):
-        return "unchanged_region"
+    # Ignore hidden color only where alpha is exactly zero. Multiplying colors
+    # by low alpha at 8-bit precision can discard genuine channel differences.
+    alpha = before.getchannel("A")
+    if ImageChops.difference(alpha, after.getchannel("A")).getbbox() is None:
+        delta = ImageChops.difference(before.convert("RGB"), after.convert("RGB"))
+        delta.paste((0, 0, 0), mask=alpha.point([255] + [0] * 255))
+        if delta.getbbox() is None:
+            return "unchanged_region"
     if max_boundary_jump is not None and _jump_exceeds(base.convert("RGBA"), canvas, [box, *holes], max_boundary_jump):
         return "boundary_discontinuity"
     return "changed"
