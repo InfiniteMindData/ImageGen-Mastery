@@ -1,15 +1,16 @@
 """Bounded, versioned revision runs. No automatic network retries."""
 
 import json
-import math
-from dataclasses import replace
+from dataclasses import asdict, replace
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Callable, Sequence, TypeVar
 
+from .acceptance import EditPolicy, check_candidate
+from .localization import localize
 from .capabilities import ImageSettings, validate
 from .editing import render
-from .evaluation import load_image, visible
+from .evaluation import load_image
 from .inspection import inspect_image, require_authorization
 from .profiles import CREDENTIALS, PRICING_VERSION, PriceProfile, get_profile
 from .prompt import optimize, review_requirements
@@ -75,22 +76,6 @@ def _snapshot(path: Path, target: Path) -> dict:
     return {**info, "snapshot": target.name}
 
 
-def _localize(source: Path, proposed: Path, bounds: list[float], target: Path) -> str:
-    _, base = load_image(source)
-    _, patch = load_image(proposed)
-    if base.size != patch.size:
-        return "dimension_mismatch"
-    w, h = base.size
-    box = (math.floor(bounds[0]*w), math.floor(bounds[1]*h),
-           math.ceil(bounds[2]*w), math.ceil(bounds[3]*h))
-    canvas = base.convert("RGBA")
-    canvas.paste(patch.convert("RGBA").crop(box), box)
-    canvas.save(target, format="PNG")
-    if visible(canvas.crop(box)).tobytes() == visible(base.crop(box)).tobytes():
-        return "unchanged_region"
-    return "changed"
-
-
 def _same_region(a: list[float], b: list[float]) -> bool:
     overlap = max(0, min(a[2], b[2])-max(a[0], b[0])) * max(0, min(a[3], b[3])-max(a[1], b[1]))
     area_a = (a[2]-a[0]) * (a[3]-a[1])
@@ -114,8 +99,10 @@ def run_loop(brief: dict, directory: Path, *, budget: Decimal | str, max_revisio
              aspect_ratio: str | None = None,
              size: str | None = None, authorized: bool = False,
              image_provider: str = "google", image_model: str | None = None,
-             vision_provider: str = "openai", vision_model: str | None = None) -> dict:
+             vision_provider: str = "openai", vision_model: str | None = None,
+             policy: EditPolicy = EditPolicy()) -> dict:
     require_authorization(authorized)
+    policy.validate()
     prompt = optimize(brief)
     try:
         budget = Decimal(budget)
@@ -141,7 +128,7 @@ def run_loop(brief: dict, directory: Path, *, budget: Decimal | str, max_revisio
     base = directory / "v000.png"
     requirements = review_requirements(brief)
     locks = brief.get("locked_attributes", [])
-    journal = Journal(directory, budget, {"brief": brief, "max_revisions": max_revisions,
+    journal = Journal(directory, budget, {"brief": brief, "edit_policy": asdict(policy), "max_revisions": max_revisions,
                       "image_provider": editor.provider, "image_model": editor.model,
                       "vision_provider": reviewer.provider, "vision_model": reviewer.model,
                       "image_reserve_usd": str(editor.reserve), "vision_reserve_usd": str(reviewer.reserve),
@@ -150,7 +137,7 @@ def run_loop(brief: dict, directory: Path, *, budget: Decimal | str, max_revisio
                       "source": None, "authorized": True})
     try:
         return _execute(journal, directory, prompt, refs, settings, base, requirements, locks, start,
-                        references, labels, max_revisions, editor, reviewer)
+                        references, labels, max_revisions, editor, reviewer, policy)
     except Exception:
         if journal.data["status"] == "started":
             journal.stop("local_failure")
@@ -159,7 +146,8 @@ def run_loop(brief: dict, directory: Path, *, budget: Decimal | str, max_revisio
 
 def _execute(journal: Journal, directory: Path, prompt: str, refs: tuple[Path, ...], settings: ImageSettings,
              base: Path, requirements: list[str], locks: list[str], start: Path | None, references: Sequence[Path],
-             labels: tuple[str, ...], max_revisions: int, editor: PriceProfile, reviewer: PriceProfile) -> dict:
+             labels: tuple[str, ...], max_revisions: int, editor: PriceProfile, reviewer: PriceProfile,
+             policy: EditPolicy) -> dict:
     for path, ref, label in zip(references, refs, labels):
         journal.data["settings"]["references"].append({**_snapshot(path, ref), "label": label})
     if start is not None:
@@ -186,6 +174,11 @@ def _execute(journal: Journal, directory: Path, prompt: str, refs: tuple[Path, .
     previous = None
     target = None
     for iteration in range(max_revisions + 1):
+        checks = check_candidate(current, policy, baseline=base, previous=previous,
+                                 bounds=target["bounds"] if target else None)
+        _save_json(current.with_suffix(".checks.json"), checks)
+        if not checks["passed"]:
+            return journal.stop("acceptance_failed")
         if not journal.fits(reviewer.reserve):
             return journal.stop("budget_limit")
         report = journal.call("inspect", reviewer, {"candidate": current.name},
@@ -221,7 +214,8 @@ def _execute(journal: Journal, directory: Path, prompt: str, refs: tuple[Path, .
         create(proposed, edit_prompt, replace(settings, source=current))
         journal.data["versions"].append(proposed.name)
         localized = directory / f"v{iteration + 1:03d}.png"
-        status = _localize(current, proposed, bounds, localized)
+        status = localize(current, proposed, bounds, localized, feather=policy.feather,
+                          protected=policy.protected, max_boundary_jump=policy.max_boundary_jump)
         if status != "changed":
             if localized.exists():
                 journal.data["versions"].append(localized.name)

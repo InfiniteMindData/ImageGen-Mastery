@@ -24,9 +24,10 @@ Open `sign-report/report.html`. The original fixtures differ in the color of one
 | `evaluate IMAGE [--reference PATH]` | Original JSON measurements, 4×4 changed-region ranking and manual rubric | Offline |
 | `report IMAGE --reference PATH --output-dir NEW` | Local report bundle. Optional block SSIM, difference hash, OCR and normalized regions | Offline |
 | `capabilities` | Model names, local input limits, size, ratio, quality, mask support and contract links | Offline |
-| `inspect IMAGE` | Model observations with requirement index, candidate bounding box, confidence, uncertainty, input hashes and inspected preview sizes | OpenAI |
+| `profiles` | Budgeted revision models and per-call USD reservations by operation | Offline |
+| `inspect IMAGE` | Model observations with requirement index, candidate bounding box, confidence, uncertainty, input hashes and inspected preview sizes | OpenAI or Gemini |
 | `generate BRIEF`, `edit SOURCE BRIEF` | One still PNG at a new output path | Selected provider |
-| `revise BRIEF --run-dir NEW` | Versioned, budgeted generate/import → inspect → edit workflow | Gemini for images, OpenAI for vision |
+| `revise BRIEF --run-dir NEW` | Versioned, budgeted generate/import → inspect → edit workflow | Selected image and vision profiles |
 
 Use `python -m imagegen_mastery` in place of the console script. Each command has `--help`. Windows PowerShell users can activate their environment with `.venv\Scripts\Activate.ps1`.
 
@@ -59,7 +60,11 @@ imagegen-mastery revise examples/sign-brief.json --start examples/fixtures/candi
 
 Omit `--start` to generate the first image from the brief. The example authorizes up to one edit and two inspections at standard USD rates. Starting from generation needs another $2.04 of reservation. Each request reserves its conservative upper bound immediately before dispatch. The run stops if the next edit and its review cannot both fit. Failed or interrupted requests are never retried automatically. The [provider contracts](references/provider-contracts.md) explain the budget calculation and assumptions.
 
-Put stable attributes in `locked_attributes` and specific image requirements in `constraints`. The loop selects one confident observation, keeps the original prompt and reference inputs, and copies only the evidenced rectangle from the provider's proposal. A size mismatch, unchanged region, uncertain finding, or lock regression stops the run. The inspector compares the region to the previous candidate and checks explicit locks against the baseline. Model judgment can still be wrong. Inspect the saved result before using it.
+The default editor and inspector keep the previous model choices. Run `profiles` to see budgeted combinations and reservations. Choose them with `--image-provider`, `--image-model`, `--vision-provider`, and `--vision-model`. Single-image inspection accepts `--provider` and `--model`. Availability for your account requires a live request.
+
+Put semantic locks in `locked_attributes`. For an exact pixel lock, pass a repeatable normalized `--protect-region LEFT TOP RIGHT BOTTOM`. Use `--feather 8` to blend inward over eight pixels around preserved areas; the default zero keeps the original hard cut. `--max-boundary-jump 0.12` rejects an increase above 0.12 in normalized adjacent-channel contrast across a checked edge. A real object boundary can trigger this heuristic, and a gradual mismatch can pass it.
+
+`--expected-size WIDTH HEIGHT` and repeatable `--require-text OPEN` add acceptance checks before each paid inspection. A failed check stops the run, including when the starting image already fails. OCR requires local English Tesseract and can misread lettering. The saved `vNNN.checks.json` records the result. Revised candidates are checked against the previous frame outside the edit box and against the initial frame inside protected regions, including alpha. A provider proposal with different dimensions is rejected before compositing. Model confidence remains uncalibrated. Human review is still needed for likeness, style and other semantic requirements.
 
 The run directory contains the brief and settings in `manifest.json`, the submitted generation/edit prompts, reference snapshots, all original provider versions, localized candidates and per-version inspection JSON. `accepted` identifies the most recently reviewed usable candidate, which can still have outstanding defects at a budget or iteration stop. A null value means no candidate passed the acceptance checks. A failed run retains its evidence and reservations. The CLI refuses to reuse the directory.
 
@@ -81,4 +86,4 @@ python examples/compare_tiles.py
 python examples/make_sign_fixtures.py
 ```
 
-Provider tests use simulated HTTP responses. CI runs the offline suite and installed CLI on Python 3.10, 3.12 and 3.13, and runs local Tesseract on the sign fixture. The repository is distributed under the [MIT license](LICENSE).
+The [opt-in live provider suite](integration_live/README.md) is separate from CI and requires explicit authorization per provider. Offline provider tests use simulated HTTP responses. CI runs the offline suite and installed CLI on Python 3.10, 3.12 and 3.13, and runs local Tesseract on the sign fixture. The repository is distributed under the [MIT license](LICENSE).

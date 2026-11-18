@@ -5,10 +5,12 @@ import json
 import sys
 from pathlib import Path
 
+from .acceptance import EditPolicy
 from .capabilities import ImageSettings, capabilities
 from .editing import render
 from .evaluation import evaluate
 from .inspection import inspect_image, require_authorization
+from .profiles import IMAGE_PROFILES, VISION_PROFILES, PRICING_VERSION
 from .prompt import optimize, review_requirements
 from .references import attachment_note, bind_references
 from .reporting import make_report
@@ -41,6 +43,8 @@ def main(argv=None):
     vision.add_argument("image", type=Path)
     vision.add_argument("--brief", type=Path)
     vision.add_argument("--reference", type=Path, action="append", default=[])
+    vision.add_argument("--provider", choices=("openai", "google"), default="openai")
+    vision.add_argument("--model")
     vision.add_argument("--lock", action="append", default=[])
     vision.add_argument("--authorize-paid", action="store_true")
     loop = commands.add_parser("revise", help="generate or import, inspect and revise within a standard USD budget")
@@ -52,12 +56,22 @@ def main(argv=None):
     loop.add_argument("--budget-usd", required=True)
     loop.add_argument("--aspect-ratio")
     loop.add_argument("--size")
+    loop.add_argument("--image-provider", choices=("openai", "google"), default="google")
+    loop.add_argument("--image-model")
+    loop.add_argument("--vision-provider", choices=("openai", "google"), default="openai")
+    loop.add_argument("--vision-model")
+    loop.add_argument("--feather", type=int, default=0, metavar="PIXELS")
+    loop.add_argument("--max-boundary-jump", type=float)
+    loop.add_argument("--protect-region", type=float, nargs=4, action="append", default=[])
+    loop.add_argument("--require-text", action="append", default=[])
+    loop.add_argument("--expected-size", type=int, nargs=2, metavar=("WIDTH", "HEIGHT"))
     loop.add_argument("--authorize-paid", action="store_true")
     gen = commands.add_parser("generate", help="send a compiled brief to a paid API")
     edit = commands.add_parser("edit", help="edit a source image using a paid provider")
     edit.add_argument("source", type=Path)
     edit.add_argument("--mask", type=Path)
     commands.add_parser("capabilities", help="list registered image models and settings")
+    commands.add_parser("profiles", help="list supported budgeted revision models and per-call USD reservations")
     for cmd in (gen, edit):
         cmd.add_argument("brief", type=Path)
         cmd.add_argument("--provider", choices=("openai", "google"), required=True)
@@ -86,14 +100,25 @@ def main(argv=None):
             refs, labels = bind_references(brief, args.reference, args.named_reference)
             locks = list(dict.fromkeys([*brief.get("locked_attributes", []), *args.lock]))
             print(json.dumps(inspect_image(args.image, review_requirements(brief), references=refs,
-                                           reference_labels=labels, locks=locks, authorized=args.authorize_paid), indent=2))
+                                           reference_labels=labels, locks=locks, provider=args.provider,
+                                           model=args.model, authorized=args.authorize_paid), indent=2))
         elif args.command == "revise":
             brief = json.loads(args.brief.read_text(encoding="utf-8"))
+            policy = EditPolicy(args.feather, tuple(tuple(region) for region in args.protect_region),
+                                args.max_boundary_jump, tuple(args.require_text),
+                                tuple(args.expected_size) if args.expected_size else None)
             result = run_loop(brief, args.run_dir, start=args.start, references=args.reference,
                               named_references=args.named_reference, max_revisions=args.max_revisions,
-                              budget=args.budget_usd, aspect_ratio=args.aspect_ratio,
+                              budget=args.budget_usd, aspect_ratio=args.aspect_ratio, policy=policy,
+                              image_provider=args.image_provider, image_model=args.image_model,
+                              vision_provider=args.vision_provider, vision_model=args.vision_model,
                               size=args.size, authorized=args.authorize_paid)
             print(json.dumps(result, indent=2))
+        elif args.command == "profiles":
+            rates = {role: [{"provider": entry.provider, "model": entry.model, "reserve_usd": str(entry.reserve)}
+                            for entry in entries.values()]
+                     for role, entries in (("image", IMAGE_PROFILES), ("vision", VISION_PROFILES))}
+            print(json.dumps({"pricing_profile": PRICING_VERSION, **rates}, indent=2))
         elif args.command == "capabilities":
             print(json.dumps(capabilities(), indent=2))
         else:

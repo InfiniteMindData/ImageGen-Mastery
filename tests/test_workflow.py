@@ -147,3 +147,18 @@ class LoopTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             self.run_case()
         self.http.assert_called_once()
+
+    def test_wrong_dimensions_stop_before_paid_inspection(self):
+        from imagegen_mastery.acceptance import EditPolicy
+        result = self.run_case(policy=EditPolicy(expected_size=(32, 16)))
+        self.assertEqual(result["status"], "acceptance_failed")
+        self.assertIsNone(result["accepted"])
+        self.http.assert_not_called()
+
+    def test_failed_ocr_cannot_be_promoted_by_vision(self):
+        from imagegen_mastery.acceptance import EditPolicy
+        with patch("imagegen_mastery.acceptance.recognize", return_value="OPEM"):
+            result = self.run_case(policy=EditPolicy(required_text=("OPEN",)))
+        self.assertEqual(result["status"], "acceptance_failed")
+        self.assertEqual(result["reserved_usd"], "0")
+        self.http.assert_not_called()
