@@ -61,3 +61,11 @@ Choose the workflow that matches what the user will receive. Establish the purpo
 **Example passage.** “Single top-down meadow ground tile for a 32×32-pixel cell, diffuse midday light and three compact grass values. Quiet center for a moving unit. Broken grass runs continue across opposite edges, with sparse blades of varied length and no dominant isolated flower.”
 
 **Local correction.** If an obvious dark vertical stripe repeats every cell, inspect both the left/right edge join and the intra-tile distribution of dark blades. Fix the cause and rebuild the repeat. Verify file dimensions after export and test the engine's actual filter, atlas padding and camera zoom for edge bleeding. A large concept image can inform pixel art. Exact grids, alpha, animation timing and atlas configuration require asset-level verification. [Godot, using TileSets and terrain sets](https://github.com/godotengine/godot-docs/blob/master/tutorials/2d/using_tilesets.rst)
+
+## Environments and continuity across shots
+
+Block out ground plane, eye level, traversable route and one scale anchor before filling a street with props. On a temple approach, steps narrowing toward the gate should agree with the roof and wall directions. Reserve the strongest value contrast for the intended destination. If a near sign distracts from the gate, soften that sign first. Adding fog everywhere also obscures the destination.
+
+For a character series, record the wearer-relative side of recurring objects, the order of clothing layers and the features visible in each shot. Prefer a comparable reference view when judging proportions. Changes in view can hide a clasp or shorten a forearm in projection. Keep a frame-by-frame record of deliberate changes (coat opened, character moved indoors) so the next edit preserves the story state.
+
+For a flat illustration, group the masses before discussing surface detail. Check whether adjacent shapes separate by value or rely only on hue. For example, when a dark bird disappears into a dark roof, shift the roof's value locally or separate their silhouettes. Preserve the chosen contour weight and limited palette elsewhere.
