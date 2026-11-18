@@ -66,6 +66,12 @@ def main(argv=None):
     loop.add_argument("--require-text", action="append", default=[])
     loop.add_argument("--expected-size", type=int, nargs=2, metavar=("WIDTH", "HEIGHT"))
     loop.add_argument("--authorize-paid", action="store_true")
+    enhancement = commands.add_parser("enhance", help="upscale, denoise or sharpen locally")
+    enhancement.add_argument("source", type=Path)
+    enhancement.add_argument("--output", type=Path, required=True)
+    enhancement.add_argument("--scale", type=int, default=1)
+    enhancement.add_argument("--denoise", action="store_true")
+    enhancement.add_argument("--sharpen", type=int, default=0, metavar="PERCENT")
     gen = commands.add_parser("generate", help="send a compiled brief to a paid API")
     edit = commands.add_parser("edit", help="edit a source image using a paid provider")
     edit.add_argument("source", type=Path)
@@ -114,6 +120,10 @@ def main(argv=None):
                               vision_provider=args.vision_provider, vision_model=args.vision_model,
                               size=args.size, authorized=args.authorize_paid)
             print(json.dumps(result, indent=2))
+        elif args.command == "enhance":
+            from .enhancement import enhance_file
+            print(json.dumps(enhance_file(args.source, args.output, scale=args.scale,
+                                          denoise=args.denoise, sharpen=args.sharpen), indent=2))
         elif args.command == "profiles":
             rates = {role: [{"provider": entry.provider, "model": entry.model, "reserve_usd": str(entry.reserve)}
                             for entry in entries.values()]

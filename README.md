@@ -24,6 +24,7 @@ Open `sign-report/report.html`. The original fixtures differ in the color of one
 | `evaluate IMAGE [--reference PATH]` | Original JSON measurements, 4×4 changed-region ranking and manual rubric | Offline |
 | `report IMAGE --reference PATH --output-dir NEW` | Local report bundle. Optional block SSIM, difference hash, OCR and normalized regions | Offline |
 | `capabilities` | Model names, local input limits, size, ratio, quality, mask support and contract links | Offline |
+| `enhance SOURCE --output NEW.png` | Optional local upscale, noise reduction and sharpening, also available as a ComfyUI node | Offline |
 | `profiles` | Budgeted revision models and per-call USD reservations by operation | Offline |
 | `inspect IMAGE` | Model observations with requirement index, candidate bounding box, confidence, uncertainty, input hashes and inspected preview sizes | OpenAI or Gemini |
 | `generate BRIEF`, `edit SOURCE BRIEF` | One still PNG at a new output path | Selected provider |
@@ -67,6 +68,14 @@ Put semantic locks in `locked_attributes`. For an exact pixel lock, pass a repea
 `--expected-size WIDTH HEIGHT` and repeatable `--require-text OPEN` add acceptance checks before each paid inspection. A failed check stops the run, including when the starting image already fails. OCR requires local English Tesseract and can misread lettering. The saved `vNNN.checks.json` records the result. Revised candidates are checked against the previous frame outside the edit box and against the initial frame inside protected regions, including alpha. A provider proposal with different dimensions is rejected before compositing. Model confidence remains uncalibrated. Human review is still needed for likeness, style and other semantic requirements.
 
 The run directory contains the brief and settings in `manifest.json`, the submitted generation/edit prompts, reference snapshots, all original provider versions, localized candidates and per-version inspection JSON. `accepted` identifies the most recently reviewed usable candidate, which can still have outstanding defects at a budget or iteration stop. A null value means no candidate passed the acceptance checks. A failed run retains its evidence and reservations. The CLI refuses to reuse the directory.
+
+## Local enhancement
+
+```sh
+imagegen-mastery enhance examples/fixtures/candidate.png --output sign-2x.png --scale 2 --sharpen 40
+```
+
+Add `--denoise` for median filtering. Upscaling interpolates pixels, denoising can remove texture, and sharpening can create halos. The optional ComfyUI node runs these same operations locally. [Enhancement controls and node installation](references/enhancements.md)
 
 ## Reading the measurements
 

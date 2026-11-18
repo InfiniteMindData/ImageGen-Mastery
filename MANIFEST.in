@@ -2,3 +2,5 @@ include SKILL.md
 recursive-include references *.md
 recursive-include examples *.json *.py *.png
 recursive-include tests *.py
+recursive-include custom_nodes *.py
+recursive-include integration_live *.py *.md
