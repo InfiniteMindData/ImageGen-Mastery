@@ -17,8 +17,8 @@ COMPARISON_SIZE = (64, 64)
 FORMATS = ("JPEG", "PNG", "WEBP", "GIF", "BMP", "PPM")
 
 
-def _measure(path: Path) -> tuple[dict, Image.Image]:
-    """Decode one bounded file and measure its visible, EXIF-oriented pixels."""
+def load_image(path: Path) -> tuple[dict, Image.Image]:
+    """Read a bounded still image once. Return provenance and its display-oriented pixels."""
     try:
         if not path.is_file():
             raise ValueError(f"Expected a regular image file at {path}")
@@ -37,10 +37,6 @@ def _measure(path: Path) -> tuple[dict, Image.Image]:
                 raise ValueError(f"{path} is animated. Supply a still image.")
             oriented = ImageOps.exif_transpose(source)
             width, height = oriented.size
-            rgba = oriented.convert("RGBA")
-            rgba.thumbnail((SAMPLE_SIDE, SAMPLE_SIDE), Image.Resampling.LANCZOS)
-            sample = Image.new("RGB", rgba.size, "white")
-            sample.paste(rgba, mask=rgba.getchannel("A"))
             image_format = source.format
     except UnidentifiedImageError as exc:
         raise ValueError(f"Unrecognized image at {path}. Supported formats include {', '.join(FORMATS)}.") from exc
@@ -49,14 +45,28 @@ def _measure(path: Path) -> tuple[dict, Image.Image]:
     except (OSError, SyntaxError) as exc:
         raise ValueError(f"Cannot read image at {path}. {exc}") from exc
 
+    return {
+        "path": str(path), "sha256": hashlib.sha256(data).hexdigest(),
+        "width": width, "height": height, "format": image_format,
+    }, oriented
+
+
+def visible(image: Image.Image, side: int | None = None) -> Image.Image:
+    rgba = image.convert("RGBA")
+    if side is not None:
+        rgba.thumbnail((side, side), Image.Resampling.LANCZOS)
+    sample = Image.new("RGB", rgba.size, "white")
+    sample.paste(rgba, mask=rgba.getchannel("A"))
+    return sample
+
+
+def _measure(path: Path) -> tuple[dict, Image.Image]:
+    info, image = load_image(path)
+    sample = visible(image, SAMPLE_SIDE)
     rgb = ImageStat.Stat(sample)
     luma = ImageStat.Stat(sample.convert("L"))
     return {
-        "path": str(path),
-        "sha256": hashlib.sha256(data).hexdigest(),
-        "format": image_format,
-        "width": width,
-        "height": height,
+        **info,
         "sample_size": list(sample.size),
         "mean_rgb": [round(value, 3) for value in rgb.mean],
         "luma_stddev": round(luma.stddev[0], 3),

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .evaluation import evaluate
+from .inspection import inspect_image
 from .prompt import optimize
 from .providers import generate
 
@@ -22,6 +23,12 @@ def main(argv=None):
     review = commands.add_parser("evaluate", help="measure an image and prepare a review")
     review.add_argument("image", type=Path)
     review.add_argument("--reference", type=Path)
+    vision = commands.add_parser("inspect", help="inspect actual pixels via a paid vision model")
+    vision.add_argument("image", type=Path)
+    vision.add_argument("--brief", type=Path)
+    vision.add_argument("--reference", type=Path, action="append", default=[])
+    vision.add_argument("--lock", action="append", default=[])
+    vision.add_argument("--authorize-paid", action="store_true")
     gen = commands.add_parser("generate", help="send a compiled brief to a paid API")
     gen.add_argument("brief", type=Path)
     gen.add_argument("--provider", choices=("openai", "google"), required=True)
@@ -33,6 +40,10 @@ def main(argv=None):
             print(_brief(args.brief))
         elif args.command == "evaluate":
             print(json.dumps(evaluate(args.image, args.reference), indent=2))
+        elif args.command == "inspect":
+            requirements = [_brief(args.brief)] if args.brief else ["Inspect visible rendering defects."]
+            print(json.dumps(inspect_image(args.image, requirements, references=args.reference,
+                                           locks=args.lock, authorized=args.authorize_paid), indent=2))
         else:
             prompt = _brief(args.brief)
             # Reserve the destination before sending a billable request.
