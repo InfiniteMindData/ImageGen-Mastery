@@ -10,15 +10,12 @@ from typing import Callable, Sequence, TypeVar
 from .capabilities import ImageSettings, validate
 from .editing import render
 from .evaluation import load_image, visible
-from .inspection import VISION_MODEL, inspect_image, require_authorization
+from .inspection import inspect_image, require_authorization
+from .profiles import CREDENTIALS, PRICING_VERSION, PriceProfile, get_profile
 from .prompt import optimize, review_requirements
 from .providers import _credential
 from .references import attachment_note, bind_references
 
-EDITOR = "gemini-3.1-flash-image"
-# Standard USD token rates and maximum request sizes. See references/provider-contracts.md.
-IMAGE_RESERVE = Decimal("2.04")
-VISION_RESERVE = Decimal("0.22")
 T = TypeVar("T")
 
 
@@ -34,7 +31,7 @@ class Journal:
         self.budget = budget
         self.reserved = Decimal(0)
         self.data = {"status": "started", "accepted": None, "budget_usd": str(budget),
-                     "reserved_usd": "0", "settings": settings, "requests": [], "versions": []}
+                     "reserved_usd": "0", "cost_basis": "reservations_only", "settings": settings, "requests": [], "versions": []}
         self.save()
 
     def save(self) -> None:
@@ -48,8 +45,9 @@ class Journal:
     def fits(self, amount: Decimal) -> bool:
         return self.reserved + amount <= self.budget
 
-    def call(self, operation: str, amount: Decimal, details: dict, action: Callable[[Callable[[], None]], T]) -> T:
-        entry = {"operation": operation, "reserve_usd": str(amount), "status": "unconfirmed", **details}
+    def call(self, operation: str, profile: PriceProfile, details: dict, action: Callable[[Callable[[], None]], T]) -> T:
+        amount = profile.reserve
+        entry = {"operation": operation, "provider": profile.provider, "model": profile.model, "reserve_usd": str(amount), "status": "unconfirmed", **details}
 
         def reserve() -> None:
             if not self.fits(amount):
@@ -114,7 +112,9 @@ def _regressed(defects: list[dict], remaining: list[dict]) -> bool:
 def run_loop(brief: dict, directory: Path, *, budget: Decimal | str, max_revisions: int,
              start: Path | None = None, references: Sequence[Path] = (), named_references: Sequence[tuple[str, Path]] = (),
              aspect_ratio: str | None = None,
-             size: str | None = None, authorized: bool = False) -> dict:
+             size: str | None = None, authorized: bool = False,
+             image_provider: str = "google", image_model: str | None = None,
+             vision_provider: str = "openai", vision_model: str | None = None) -> dict:
     require_authorization(authorized)
     prompt = optimize(brief)
     try:
@@ -128,7 +128,13 @@ def run_loop(brief: dict, directory: Path, *, budget: Decimal | str, max_revisio
     references, labels = bind_references(brief, references, named_references, require_all=True)
     if len(references) > 3:
         raise ValueError("The revision loop accepts at most three references.")
-    validate("google", EDITOR, ImageSettings(source=start, references=tuple(references), aspect_ratio=aspect_ratio, size=size))
+    editor = get_profile("image", image_provider, image_model)
+    reviewer = get_profile("vision", vision_provider, vision_model)
+    # A revision uploads the accepted image in addition to every reference.
+    starting_settings = ImageSettings(source=start, references=tuple(references), aspect_ratio=aspect_ratio, size=size)
+    validate(editor.provider, editor.model, starting_settings)
+    if max_revisions and start is None:
+        validate(editor.provider, editor.model, replace(starting_settings, source=directory / "v000.png"))
     directory.mkdir(mode=0o700, exist_ok=False)
     refs = tuple(directory / f"reference-{index}.png" for index in range(len(references)))
     settings = ImageSettings(references=refs, aspect_ratio=aspect_ratio, size=size)
@@ -136,13 +142,15 @@ def run_loop(brief: dict, directory: Path, *, budget: Decimal | str, max_revisio
     requirements = review_requirements(brief)
     locks = brief.get("locked_attributes", [])
     journal = Journal(directory, budget, {"brief": brief, "max_revisions": max_revisions,
-                      "image_provider": "google", "image_model": EDITOR, "vision_model": VISION_MODEL,
+                      "image_provider": editor.provider, "image_model": editor.model,
+                      "vision_provider": reviewer.provider, "vision_model": reviewer.model,
+                      "image_reserve_usd": str(editor.reserve), "vision_reserve_usd": str(reviewer.reserve),
                       "aspect_ratio": aspect_ratio, "size": size, "min_confidence": 0.8,
-                      "pricing_profile": "standard-usd-2026-11-18", "references": [],
+                      "pricing_profile": PRICING_VERSION, "references": [],
                       "source": None, "authorized": True})
     try:
         return _execute(journal, directory, prompt, refs, settings, base, requirements, locks, start,
-                        references, labels, max_revisions)
+                        references, labels, max_revisions, editor, reviewer)
     except Exception:
         if journal.data["status"] == "started":
             journal.stop("local_failure")
@@ -151,7 +159,7 @@ def run_loop(brief: dict, directory: Path, *, budget: Decimal | str, max_revisio
 
 def _execute(journal: Journal, directory: Path, prompt: str, refs: tuple[Path, ...], settings: ImageSettings,
              base: Path, requirements: list[str], locks: list[str], start: Path | None, references: Sequence[Path],
-             labels: tuple[str, ...], max_revisions: int) -> dict:
+             labels: tuple[str, ...], max_revisions: int, editor: PriceProfile, reviewer: PriceProfile) -> dict:
     for path, ref, label in zip(references, refs, labels):
         journal.data["settings"]["references"].append({**_snapshot(path, ref), "label": label})
     if start is not None:
@@ -162,14 +170,14 @@ def _execute(journal: Journal, directory: Path, prompt: str, refs: tuple[Path, .
         text += attachment_note(labels, source=options.source is not None)
         details = {"output": path.name, "source": options.source.name if options.source else None,
                    "references": [ref.name for ref in refs], "prompt": text}
-        data = journal.call("edit" if options.source else "generate", IMAGE_RESERVE, details,
-                            lambda reserve: render("google", EDITOR, text, options, authorized=True, before_send=reserve))
+        data = journal.call("edit" if options.source else "generate", editor, details,
+                            lambda reserve: render(editor.provider, editor.model, text, options, authorized=True, before_send=reserve))
         path.write_bytes(data)
 
     if start is None:
-        if not journal.fits(IMAGE_RESERVE + VISION_RESERVE):
+        if not journal.fits(editor.reserve + reviewer.reserve):
             return journal.stop("budget_limit")
-        _credential("OPENAI_API_KEY")  # The following mandatory inspection needs its own key.
+        _credential(CREDENTIALS[reviewer.provider])  # The following mandatory inspection needs its own key.
         create(base, prompt, settings)
     journal.data["versions"].append(base.name)
     journal.save()
@@ -178,10 +186,11 @@ def _execute(journal: Journal, directory: Path, prompt: str, refs: tuple[Path, .
     previous = None
     target = None
     for iteration in range(max_revisions + 1):
-        if not journal.fits(VISION_RESERVE):
+        if not journal.fits(reviewer.reserve):
             return journal.stop("budget_limit")
-        report = journal.call("inspect", VISION_RESERVE, {"candidate": current.name},
+        report = journal.call("inspect", reviewer, {"candidate": current.name},
                               lambda reserve: inspect_image(current, requirements, references=refs, locks=locks,
+                                                    provider=reviewer.provider, model=reviewer.model,
                                                     baseline=base if iteration else None, previous=previous, target=target,
                                                     reference_labels=labels, authorized=True, before_send=reserve))
         _save_json(current.with_suffix(".json"), report)
@@ -197,7 +206,7 @@ def _execute(journal: Journal, directory: Path, prompt: str, refs: tuple[Path, .
             return journal.stop("no_observed_defects")
         if iteration == max_revisions:
             return journal.stop("iteration_limit")
-        if not journal.fits(IMAGE_RESERVE + VISION_RESERVE):
+        if not journal.fits(editor.reserve + reviewer.reserve):
             return journal.stop("budget_limit")
         target, *remaining = defects
         previous = current
