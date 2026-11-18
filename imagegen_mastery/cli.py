@@ -11,6 +11,7 @@ from .evaluation import evaluate
 from .inspection import inspect_image
 from .prompt import optimize
 from .providers import generate
+from .workflow import run_loop
 
 
 def _brief(path):
@@ -31,6 +32,16 @@ def main(argv=None):
     vision.add_argument("--reference", type=Path, action="append", default=[])
     vision.add_argument("--lock", action="append", default=[])
     vision.add_argument("--authorize-paid", action="store_true")
+    loop = commands.add_parser("revise", help="generate or import, inspect and revise within a standard USD budget")
+    loop.add_argument("brief", type=Path)
+    loop.add_argument("--run-dir", type=Path, required=True)
+    loop.add_argument("--start", type=Path)
+    loop.add_argument("--reference", type=Path, action="append", default=[])
+    loop.add_argument("--max-revisions", type=int, required=True)
+    loop.add_argument("--budget-usd", required=True)
+    loop.add_argument("--aspect-ratio")
+    loop.add_argument("--size")
+    loop.add_argument("--authorize-paid", action="store_true")
     gen = commands.add_parser("generate", help="send a compiled brief to a paid API")
     edit = commands.add_parser("edit", help="edit a source image using a paid provider")
     edit.add_argument("source", type=Path)
@@ -56,6 +67,12 @@ def main(argv=None):
             requirements = [_brief(args.brief)] if args.brief else ["Inspect visible rendering defects."]
             print(json.dumps(inspect_image(args.image, requirements, references=args.reference,
                                            locks=args.lock, authorized=args.authorize_paid), indent=2))
+        elif args.command == "revise":
+            brief = json.loads(args.brief.read_text(encoding="utf-8"))
+            result = run_loop(brief, args.run_dir, start=args.start, references=args.reference,
+                              max_revisions=args.max_revisions, budget=args.budget_usd, aspect_ratio=args.aspect_ratio,
+                              size=args.size, authorized=args.authorize_paid)
+            print(json.dumps(result, indent=2))
         elif args.command == "capabilities":
             print(json.dumps(capabilities(), indent=2))
         else:
