@@ -1,6 +1,6 @@
 # Worked requests
 
-These are illustrative decisions and conditional checks. They do not record generated results.
+The first three scenarios illustrate decisions and conditional checks. The final exercise uses the two included PNG fixtures.
 
 ## A tiny inventory icon
 
@@ -31,3 +31,9 @@ These are illustrative decisions and conditional checks. They do not record gene
 **Shot directions.** Establish the courier and her waiting posture in the first frame. For the second, supply the accepted first frame and A if the tool supports both; show weight transferring to the step and a hand contacting the rail. For the third, keep her design while changing to a seated pose and interior light. If one attachment is supported, prioritize A for identity and express the observed style in words. Disclose the reduced conditioning.
 
 **Inspect.** Compare each frame to A as well as to the previous frame. A bag hidden behind a seat is unobservable. If the bag strap visibly swaps shoulders in the boarding shot, correct that shot and inspect its contact with the coat. Keep the other accepted frames.
+
+## Inspect the storefront sign
+
+Open [candidate.png](fixtures/candidate.png) and [reference.png](fixtures/reference.png). Treat the reference as the desired appearance. Before reading further, write a single edit instruction and identify which details should remain locked.
+
+The smallest edit is to change the fill of the square left of OPEN from rust to teal (`#18877F`). Preserve its position, dimensions, the lettering and background. A full-frame RGB comparison of the supplied 640 × 240 fixtures places all 5,041 differing pixels in the 71 × 71 square, starting at x=54, y=82 in top-left coordinates. An exact fill is sufficient if a pixel editor is available. A fresh generation would introduce unnecessary uncertainty. These measurements describe the included files; inspect again if the inputs change.
