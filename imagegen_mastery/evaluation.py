@@ -35,6 +35,8 @@ def load_image(path: Path) -> tuple[dict, Image.Image]:
                 )
             if getattr(source, "is_animated", False):
                 raise ValueError(f"{path} is animated. Supply a still image.")
+            source.verify()
+        with Image.open(io.BytesIO(data), formats=FORMATS) as source:
             oriented = ImageOps.exif_transpose(source)
             width, height = oriented.size
             image_format = source.format
@@ -42,7 +44,7 @@ def load_image(path: Path) -> tuple[dict, Image.Image]:
         raise ValueError(f"Unrecognized image at {path}. Supported formats include {', '.join(FORMATS)}.") from exc
     except Image.DecompressionBombError as exc:
         raise ValueError(f"{path} exceeds the pixel limit") from exc
-    except (OSError, SyntaxError) as exc:
+    except (OSError, SyntaxError, EOFError) as exc:
         raise ValueError(f"Cannot read image at {path}. {exc}") from exc
 
     return {

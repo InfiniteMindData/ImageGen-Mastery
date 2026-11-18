@@ -7,13 +7,13 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Callable, Sequence, TypeVar
 
-from PIL import Image
-
 from .capabilities import ImageSettings, validate
 from .editing import render
-from .evaluation import load_image
+from .evaluation import load_image, visible
 from .inspection import VISION_MODEL, inspect_image, require_authorization
-from .prompt import optimize
+from .prompt import optimize, review_requirements
+from .providers import _credential
+from .references import attachment_note, bind_references
 
 EDITOR = "gemini-3.1-flash-image"
 # Standard USD token rates and maximum request sizes. See references/provider-contracts.md.
@@ -48,18 +48,21 @@ class Journal:
     def fits(self, amount: Decimal) -> bool:
         return self.reserved + amount <= self.budget
 
-    def call(self, operation: str, amount: Decimal, details: dict, action: Callable[[], T]) -> T:
-        if not self.fits(amount):
-            raise ValueError("Request exceeds the remaining budget.")
-        self.reserved += amount
+    def call(self, operation: str, amount: Decimal, details: dict, action: Callable[[Callable[[], None]], T]) -> T:
         entry = {"operation": operation, "reserve_usd": str(amount), "status": "unconfirmed", **details}
-        self.data["requests"].append(entry)
-        self.data["reserved_usd"] = str(self.reserved)
-        self.save()  # Persist the reservation before the request, even if the process is interrupted.
+
+        def reserve() -> None:
+            if not self.fits(amount):
+                raise ValueError("Request exceeds the remaining budget.")
+            self.reserved += amount
+            self.data["requests"].append(entry)
+            self.data["reserved_usd"] = str(self.reserved)
+            self.save()
+
         try:
-            result = action()
+            result = action(reserve)
         except Exception:
-            self.stop("request_failed")
+            self.stop("request_failed" if entry in self.data["requests"] else "local_failure")
             raise
         entry["status"] = "returned"
         self.save()
@@ -74,37 +77,43 @@ def _snapshot(path: Path, target: Path) -> dict:
     return {**info, "snapshot": target.name}
 
 
-def _localize(source: Path, proposed: Path, bounds: list[float], target: Path) -> bool:
+def _localize(source: Path, proposed: Path, bounds: list[float], target: Path) -> str:
     _, base = load_image(source)
     _, patch = load_image(proposed)
     if base.size != patch.size:
-        return False
+        return "dimension_mismatch"
     w, h = base.size
     box = (math.floor(bounds[0]*w), math.floor(bounds[1]*h),
            math.ceil(bounds[2]*w), math.ceil(bounds[3]*h))
     canvas = base.convert("RGBA")
     canvas.paste(patch.convert("RGBA").crop(box), box)
     canvas.save(target, format="PNG")
-    return True
+    if visible(canvas.crop(box)).tobytes() == visible(base.crop(box)).tobytes():
+        return "unchanged_region"
+    return "changed"
 
 
-def _requirements(brief: dict) -> list[str]:
-    # Bind every defect to an original instruction; model output cannot add an edit goal.
-    items = [brief["intent"]]
-    for key in ("style", "lighting", "composition"):
-        if key in brief:
-            items.append(brief[key])
-    items.extend(brief.get("constraints", []))
-    items.extend("Exclude: " + item for item in brief.get("avoid", []))
-    for ref in brief.get("references", []):
-        for anchor in ref["anchors"]:
-            items.append(f'{ref["image"]}: {anchor["aspect"]} — {anchor["detail"]}')
-    items.extend(item["change"] for item in brief.get("revisions", []))
-    return items
+def _same_region(a: list[float], b: list[float]) -> bool:
+    overlap = max(0, min(a[2], b[2])-max(a[0], b[0])) * max(0, min(a[3], b[3])-max(a[1], b[1]))
+    area_a = (a[2]-a[0]) * (a[3]-a[1])
+    area_b = (b[2]-b[0]) * (b[3]-b[1])
+    return overlap >= 0.5 * (area_a + area_b - overlap)
+
+
+def _regressed(defects: list[dict], remaining: list[dict]) -> bool:
+    unmatched = remaining.copy()
+    for item in defects:
+        match = next((old for old in unmatched if old["requirement"] == item["requirement"]
+                      and _same_region(old["bounds"], item["bounds"])), None)
+        if match is None:
+            return True
+        unmatched.remove(match)
+    return False
 
 
 def run_loop(brief: dict, directory: Path, *, budget: Decimal | str, max_revisions: int,
-             start: Path | None = None, references: Sequence[Path] = (), aspect_ratio: str | None = None,
+             start: Path | None = None, references: Sequence[Path] = (), named_references: Sequence[tuple[str, Path]] = (),
+             aspect_ratio: str | None = None,
              size: str | None = None, authorized: bool = False) -> dict:
     require_authorization(authorized)
     prompt = optimize(brief)
@@ -116,6 +125,7 @@ def run_loop(brief: dict, directory: Path, *, budget: Decimal | str, max_revisio
         raise ValueError("Supply a finite nonnegative USD budget.")
     if type(max_revisions) is not int or not 0 <= max_revisions <= 20:
         raise ValueError("Choose 0 through 20 revision attempts.")
+    references, labels = bind_references(brief, references, named_references, require_all=True)
     if len(references) > 3:
         raise ValueError("The revision loop accepts at most three references.")
     validate("google", EDITOR, ImageSettings(source=start, references=tuple(references), aspect_ratio=aspect_ratio, size=size))
@@ -123,64 +133,77 @@ def run_loop(brief: dict, directory: Path, *, budget: Decimal | str, max_revisio
     refs = tuple(directory / f"reference-{index}.png" for index in range(len(references)))
     settings = ImageSettings(references=refs, aspect_ratio=aspect_ratio, size=size)
     base = directory / "v000.png"
-    requirements = _requirements(brief)
+    requirements = review_requirements(brief)
     locks = brief.get("locked_attributes", [])
     journal = Journal(directory, budget, {"brief": brief, "max_revisions": max_revisions,
                       "image_provider": "google", "image_model": EDITOR, "vision_model": VISION_MODEL,
                       "aspect_ratio": aspect_ratio, "size": size, "min_confidence": 0.8,
                       "pricing_profile": "standard-usd-2026-11-18", "references": [],
                       "source": None, "authorized": True})
-    for path, ref in zip(references, refs):
-        journal.data["settings"]["references"].append(_snapshot(path, ref))
+    try:
+        return _execute(journal, directory, prompt, refs, settings, base, requirements, locks, start,
+                        references, labels, max_revisions)
+    except Exception:
+        if journal.data["status"] == "started":
+            journal.stop("local_failure")
+        raise
+
+
+def _execute(journal: Journal, directory: Path, prompt: str, refs: tuple[Path, ...], settings: ImageSettings,
+             base: Path, requirements: list[str], locks: list[str], start: Path | None, references: Sequence[Path],
+             labels: tuple[str, ...], max_revisions: int) -> dict:
+    for path, ref, label in zip(references, refs, labels):
+        journal.data["settings"]["references"].append({**_snapshot(path, ref), "label": label})
     if start is not None:
         journal.data["settings"]["source"] = _snapshot(start, base)
     journal.save()
 
     def create(path: Path, text: str, options: ImageSettings) -> None:
+        text += attachment_note(labels, source=options.source is not None)
         details = {"output": path.name, "source": options.source.name if options.source else None,
                    "references": [ref.name for ref in refs], "prompt": text}
         data = journal.call("edit" if options.source else "generate", IMAGE_RESERVE, details,
-                            lambda: render("google", EDITOR, text, options, authorized=True))
+                            lambda reserve: render("google", EDITOR, text, options, authorized=True, before_send=reserve))
         path.write_bytes(data)
 
     if start is None:
         if not journal.fits(IMAGE_RESERVE + VISION_RESERVE):
             return journal.stop("budget_limit")
+        _credential("OPENAI_API_KEY")  # The following mandatory inspection needs its own key.
         create(base, prompt, settings)
     journal.data["versions"].append(base.name)
     journal.save()
     current = base
-    previous_issues: set[int] = set()
-    targeted: int | None = None
+    remaining: list[dict] = []
+    previous = None
+    target = None
     for iteration in range(max_revisions + 1):
         if not journal.fits(VISION_RESERVE):
             return journal.stop("budget_limit")
         report = journal.call("inspect", VISION_RESERVE, {"candidate": current.name},
-                              lambda: inspect_image(current, requirements, references=refs, locks=locks,
-                                                    baseline=base if iteration else None, authorized=True))
+                              lambda reserve: inspect_image(current, requirements, references=refs, locks=locks,
+                                                    baseline=base if iteration else None, previous=previous, target=target,
+                                                    reference_labels=labels, authorized=True, before_send=reserve))
         _save_json(current.with_suffix(".json"), report)
         if any(check["status"] != "met" for check in report["locks"]):
             return journal.stop("lock_review_required")
-        if report["uncertainties"]:
+        if report["uncertainties"] or any(item["uncertainty"] or item["confidence"] < 0.8 for item in report["defects"]):
             return journal.stop("uncertain")
         defects = report["defects"]
-        issues = {item["requirement"] for item in defects}
-        if targeted is not None and (targeted in issues or issues - previous_issues):
+        if target is not None and (report["resolution"]["status"] != "corrected" or _regressed(defects, remaining)):
             return journal.stop("revision_unverified")
         journal.data["accepted"] = current.name
         if not defects:
             return journal.stop("no_observed_defects")
         if iteration == max_revisions:
             return journal.stop("iteration_limit")
-        defect = next((item for item in defects if item["confidence"] >= 0.8 and not item["uncertainty"]), None)
-        if defect is None:
-            return journal.stop("uncertain")
         if not journal.fits(IMAGE_RESERVE + VISION_RESERVE):
             return journal.stop("budget_limit")
-        previous_issues = issues
-        targeted = defect["requirement"]
-        bounds = defect["bounds"]
-        region = json.dumps({"bounds_xyxy": bounds, "observed": defect["observation"],
+        target, *remaining = defects
+        previous = current
+        targeted = target["requirement"]
+        bounds = target["bounds"]
+        region = json.dumps({"bounds_xyxy": bounds, "observed": target["observation"],
                              "required": requirements[targeted]}, ensure_ascii=False)
         edit_prompt = (prompt + "\n\nThe first image is the source. Preserve all other details and locks. "
                        "Correct only this region against its original requirement. "
@@ -189,10 +212,12 @@ def run_loop(brief: dict, directory: Path, *, budget: Decimal | str, max_revisio
         create(proposed, edit_prompt, replace(settings, source=current))
         journal.data["versions"].append(proposed.name)
         localized = directory / f"v{iteration + 1:03d}.png"
-        if not _localize(current, proposed, bounds, localized):
-            return journal.stop("dimension_mismatch")
+        status = _localize(current, proposed, bounds, localized)
+        if status != "changed":
+            if localized.exists():
+                journal.data["versions"].append(localized.name)
+            return journal.stop(status)
         current = localized
         journal.data["versions"].append(current.name)
         journal.save()
     raise AssertionError("Revision loop exceeded its iteration limit")
-

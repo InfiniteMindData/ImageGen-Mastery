@@ -4,7 +4,7 @@ import base64
 import io
 import json
 from pathlib import Path
-from typing import Sequence, TypedDict
+from typing import Callable, Sequence, TypedDict
 
 from .evaluation import load_image, visible
 from .providers import ProviderError, _credential, _post
@@ -50,10 +50,19 @@ def _text(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def _validate(review: dict, requirements: Sequence[str], locks: Sequence[str]) -> None:
-    if not isinstance(review, dict) or set(review) != {"defects", "locks", "uncertainties"}:
+def _validate(review: dict, requirements: Sequence[str], locks: Sequence[str], revising: bool) -> None:
+    keys = {"defects", "locks", "uncertainties"}
+    if revising:
+        keys.add("resolution")
+    if not isinstance(review, dict) or set(review) != keys:
         raise ValueError
-    if not all(isinstance(items, list) for items in review.values()):
+    if revising:
+        fix = review["resolution"]
+        if (not isinstance(fix, dict) or set(fix) != {"status", "before", "after"}
+                or fix["status"] not in ("corrected", "unresolved", "uncertain")
+                or not _text(fix["before"]) or not _text(fix["after"])):
+            raise ValueError
+    if not all(isinstance(review[key], list) for key in ("defects", "locks", "uncertainties")):
         raise ValueError
     for item in review["defects"]:
         if (not isinstance(item, dict) or set(item) != set(Defect.__annotations__)
@@ -71,18 +80,32 @@ def _validate(review: dict, requirements: Sequence[str], locks: Sequence[str]) -
 
 
 def inspect_image(candidate: Path, requirements: Sequence[str], *, references: Sequence[Path] = (),
-                  locks: Sequence[str] = (), baseline: Path | None = None,
-                  authorized: bool = False) -> dict:
+                  locks: Sequence[str] = (), baseline: Path | None = None, reference_labels: Sequence[str] = (),
+                  previous: Path | None = None, target: Defect | None = None,
+                  authorized: bool = False, before_send: Callable[[], None] | None = None) -> dict:
     require_authorization(authorized)
     if not requirements or not all(map(_text, [*requirements, *locks])):
         raise ValueError("Provide nonblank review requirements and locks.")
     if len(references) > MAX_REFERENCES:
         raise ValueError(f"Inspection supports up to {MAX_REFERENCES} references.")
-    instructions = json.dumps({"requirements": list(requirements), "locks": list(locks)}, ensure_ascii=False)
+    if reference_labels and len(reference_labels) != len(references):
+        raise ValueError("Each uploaded reference must have exactly one label.")
+    if (target is None) != (previous is None):
+        raise ValueError("A targeted reinspection needs the previous image and its finding.")
+    instructions = json.dumps({"requirements": list(requirements), "locks": list(locks), "prior_finding": target}, ensure_ascii=False)
     parts = [{"type": "text", "text": instructions}]
-    sources = [("candidate", candidate), *(("reference", ref) for ref in references)]
+    sources = [("candidate", candidate)]
+    for index, ref in enumerate(references):
+        label = reference_labels[index] if reference_labels else str(index+1)
+        sources.append(("reference: " + label, ref))
     if baseline is not None:
         sources.append(("locked baseline", baseline))
+    system = INSTRUCTIONS + " Reference notes without a matching attached label are user descriptions only."
+    if previous is not None:
+        sources.append(("previous candidate", previous))
+        system += (" Compare the prior finding in the previous candidate to the same region in the new candidate. "
+                   "Add resolution with status corrected, unresolved or uncertain, and separate before and after "
+                   "descriptions of the visible evidence. Report newly introduced defects.")
     inputs = []
     for role, path in sources:
         metadata, image = load_image(Path(path))
@@ -97,14 +120,14 @@ def inspect_image(candidate: Path, requirements: Sequence[str], *, references: S
     result = _post("https://api.openai.com/v1/chat/completions",
                    {"Authorization": "Bearer " + _credential("OPENAI_API_KEY")},
                    {"model": VISION_MODEL, "messages": [
-                       {"role": "system", "content": INSTRUCTIONS}, {"role": "user", "content": parts}],
-                    "service_tier": "default", "response_format": {"type": "json_object"}, "max_completion_tokens": 2048})
+                       {"role": "system", "content": system}, {"role": "user", "content": parts}],
+                    "service_tier": "default", "response_format": {"type": "json_object"}, "max_completion_tokens": 2048}, before_send=before_send)
     try:
         choice = result["choices"][0]
         if choice["finish_reason"] != "stop" or choice["message"].get("refusal"):
             raise ValueError
         review = json.loads(choice["message"]["content"])
-        _validate(review, requirements, locks)
+        _validate(review, requirements, locks, target is not None)
     except (ValueError, KeyError, IndexError, TypeError, AttributeError, RecursionError):
         raise ProviderError("Vision inspection returned incomplete or invalid evidence.") from None
     return {"status": "inspected", "provider": "openai", "model": VISION_MODEL,
@@ -113,4 +136,3 @@ def inspect_image(candidate: Path, requirements: Sequence[str], *, references: S
             "limitations": "Model observations and localization can be wrong. Confidence is self-reported. "
                            "White-composited previews have at most 1024 pixels per side.",
             **review}
-

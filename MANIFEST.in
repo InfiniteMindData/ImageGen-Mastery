@@ -1,4 +1,4 @@
 include SKILL.md
 recursive-include references *.md
-recursive-include examples *.json *.py
+recursive-include examples *.json *.py *.png
 recursive-include tests *.py

@@ -16,3 +16,19 @@ jobs:
       - run: python -m pip install .
       - run: python -m unittest discover -s tests -v
       - run: imagegen-mastery optimize examples/brief.json
+      - name: Exercise installed console script outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: |
+          imagegen-mastery capabilities
+          imagegen-mastery report "$GITHUB_WORKSPACE/examples/fixtures/candidate.png" \
+            --reference "$GITHUB_WORKSPACE/examples/fixtures/reference.png" \
+            --ssim --perceptual --region 0 0 .25 1 --output-dir comparison
+          test -s comparison/report.html
+      - name: Check local English OCR on the fixture
+        if: matrix.python == '3.12'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-eng
+          imagegen-mastery report examples/fixtures/candidate.png --reference examples/fixtures/reference.png \
+            --require-text OPEN --output-dir ocr-check
+          python -c "import json; assert json.load(open('ocr-check/report.json'))['frame']['ocr']['checks'][0]['found']"

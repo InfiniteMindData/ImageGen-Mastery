@@ -3,6 +3,7 @@
 import base64
 import io
 from pathlib import Path
+from typing import Callable
 
 from .capabilities import OPENAI_SIZES, ImageSettings, validate
 from .evaluation import load_image
@@ -28,7 +29,8 @@ def _encode(path: Path, *, mask_size: tuple[int, int] | None = None) -> tuple[st
         return base64.b64encode(stream.getvalue()).decode("ascii"), image.size
 
 
-def render(provider: str, model: str, prompt: str, settings: ImageSettings, *, authorized: bool = False) -> bytes:
+def render(provider: str, model: str, prompt: str, settings: ImageSettings, *, authorized: bool = False,
+           before_send: Callable[[], None] | None = None) -> bytes:
     require_authorization(authorized)
     validate(provider, model, settings)
     if not prompt.strip() or len(prompt.encode("utf-8")) > 32000:
@@ -63,7 +65,7 @@ def render(provider: str, model: str, prompt: str, settings: ImageSettings, *, a
                 payload["mask"] = {"image_url": "data:image/png;base64," + mask}
             operation = "edits" if encoded else "generations"
             result = _post("https://api.openai.com/v1/images/" + operation,
-                           {"Authorization": "Bearer " + _credential("OPENAI_API_KEY")}, payload)
+                           {"Authorization": "Bearer " + _credential("OPENAI_API_KEY")}, payload, before_send=before_send)
             return _as_png(result["data"][0]["b64_json"], ["PNG"])
 
         parts = [{"text": prompt}]
@@ -75,8 +77,7 @@ def render(provider: str, model: str, prompt: str, settings: ImageSettings, *, a
             config["imageConfig"] = image_config
         result = _post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
                        {"x-goog-api-key": _credential("GEMINI_API_KEY")},
-                       {"contents": [{"parts": parts}], "generationConfig": config})
+                       {"contents": [{"parts": parts}], "generationConfig": config}, before_send=before_send)
         return _google_image(result)
     except (IndexError, KeyError, TypeError):
         raise ProviderError("The image provider returned no image.") from None
-

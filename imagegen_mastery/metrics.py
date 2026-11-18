@@ -51,7 +51,7 @@ def _dhash(image: Image.Image) -> list[bool]:
 def measure_pair(candidate: Image.Image, reference: Image.Image, *, ssim: bool,
                  perceptual: bool) -> tuple[dict, Image.Image]:
     sample = candidate.copy()
-    sample.thumbnail((256, 256), Image.Resampling.LANCZOS)
+    sample.thumbnail((256, 256), Image.Resampling.LANCZOS, reducing_gap=None)
     baseline = reference.resize(sample.size, Image.Resampling.LANCZOS)
     diff = ImageChops.difference(sample, baseline)
     metrics = {"comparison_size": list(sample.size),
@@ -61,4 +61,3 @@ def measure_pair(candidate: Image.Image, reference: Image.Image, *, ssim: bool,
     if perceptual:
         metrics["dhash_distance"] = sum(a != b for a, b in zip(_dhash(sample), _dhash(baseline)))
     return metrics, diff
-

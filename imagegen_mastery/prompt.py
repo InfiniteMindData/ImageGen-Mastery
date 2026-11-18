@@ -79,3 +79,18 @@ def optimize(brief: dict) -> str:
             sections.append("\n".join([title, *lines]))
     sections.extend(_revision_notes(brief.get("revisions", [])))
     return "\n\n".join(sections)
+
+
+def review_requirements(brief: dict) -> list[str]:
+    # Bind every defect to an original instruction; model output cannot add an edit goal.
+    items = [brief["intent"]]
+    for key in ("style", "lighting", "composition"):
+        if key in brief:
+            items.append(brief[key])
+    items.extend(brief.get("constraints", []))
+    items.extend("Exclude: " + item for item in brief.get("avoid", []))
+    for ref in brief.get("references", []):
+        for anchor in ref["anchors"]:
+            items.append(f'{ref["image"]}: {anchor["aspect"]} — {anchor["detail"]}')
+    items.extend(item["change"] for item in brief.get("revisions", []))
+    return items

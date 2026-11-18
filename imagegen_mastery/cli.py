@@ -9,7 +9,8 @@ from .capabilities import ImageSettings, capabilities
 from .editing import render
 from .evaluation import evaluate
 from .inspection import inspect_image
-from .prompt import optimize
+from .prompt import optimize, review_requirements
+from .references import attachment_note, bind_references
 from .reporting import make_report
 from .providers import generate
 from .workflow import run_loop
@@ -67,6 +68,8 @@ def main(argv=None):
         cmd.add_argument("--size")
         cmd.add_argument("--quality")
         cmd.add_argument("--authorize-paid", action="store_true")
+    for cmd in (gen, edit, vision, loop):
+        cmd.add_argument("--named-reference", nargs=2, action="append", default=[], metavar=("LABEL", "PATH"))
     args = parser.parse_args(argv)
     try:
         if args.command == "optimize":
@@ -78,21 +81,28 @@ def main(argv=None):
                         regions=args.region, required_text=args.require_text)
             print(args.output_dir / "report.html")
         elif args.command == "inspect":
-            requirements = [_brief(args.brief)] if args.brief else ["Inspect visible rendering defects."]
-            print(json.dumps(inspect_image(args.image, requirements, references=args.reference,
-                                           locks=args.lock, authorized=args.authorize_paid), indent=2))
+            brief = json.loads(args.brief.read_text(encoding="utf-8")) if args.brief else {"intent": "Inspect visible rendering defects."}
+            optimize(brief)
+            refs, labels = bind_references(brief, args.reference, args.named_reference)
+            locks = list(dict.fromkeys([*brief.get("locked_attributes", []), *args.lock]))
+            print(json.dumps(inspect_image(args.image, review_requirements(brief), references=refs,
+                                           reference_labels=labels, locks=locks, authorized=args.authorize_paid), indent=2))
         elif args.command == "revise":
             brief = json.loads(args.brief.read_text(encoding="utf-8"))
             result = run_loop(brief, args.run_dir, start=args.start, references=args.reference,
-                              max_revisions=args.max_revisions, budget=args.budget_usd, aspect_ratio=args.aspect_ratio,
+                              named_references=args.named_reference, max_revisions=args.max_revisions,
+                              budget=args.budget_usd, aspect_ratio=args.aspect_ratio,
                               size=args.size, authorized=args.authorize_paid)
             print(json.dumps(result, indent=2))
         elif args.command == "capabilities":
             print(json.dumps(capabilities(), indent=2))
         else:
-            settings = ImageSettings(getattr(args, "source", None), tuple(args.reference),
+            brief = json.loads(args.brief.read_text(encoding="utf-8"))
+            prompt = optimize(brief)
+            refs, labels = bind_references(brief, args.reference, args.named_reference)
+            settings = ImageSettings(getattr(args, "source", None), refs,
                                      getattr(args, "mask", None), args.aspect_ratio, args.size, args.quality)
-            prompt = _brief(args.brief)
+            prompt += attachment_note(labels, source=settings.source is not None)
             # Reserve the destination before sending a billable request.
             destination = args.output.open("xb")
             try:
