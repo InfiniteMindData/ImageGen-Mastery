@@ -1,0 +1,28 @@
+{
+  "intent": "Illustrate a field botanist labeling a seed tray in a small greenhouse.",
+  "composition": "Landscape view at bench height. Put the botanist on the left and the seed tray in the foreground.",
+  "lighting": "Soft morning light through the roof glass.",
+  "references": [
+    {
+      "image": "Botanist character sheet",
+      "anchors": [
+        {"aspect": "Character", "detail": "The botanist has a chin-length silver bob and wears round amber glasses."},
+        {"aspect": "Wardrobe", "detail": "A moss-green apron with a single square chest pocket."}
+      ]
+    },
+    {
+      "image": "Greenhouse interior study",
+      "anchors": [
+        {"aspect": "Environment", "detail": "Narrow teal window frames and a pale wooden potting bench."}
+      ]
+    },
+    {
+      "image": "Print sample",
+      "anchors": [
+        {"aspect": "Style", "detail": "Linocut printed with flat inks, broad carved hatch marks and exposed cream paper."}
+      ]
+    }
+  ],
+  "constraints": ["Keep the entire tray visible.", "Use exactly six seed pots in two rows of three."],
+  "avoid": ["Lettering in the background.", "Glossy surfaces."]
+}

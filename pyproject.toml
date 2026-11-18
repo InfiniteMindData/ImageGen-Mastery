@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "imagegen-mastery"
+version = "0.1.0"
+description = "Intent-preserving image briefs and evidence-based image review"
+requires-python = ">=3.10"
+readme = "README.md"
+license = "MIT"
+dependencies = ["Pillow>=12.2,<14"]
+
+[project.scripts]
+imagegen-mastery = "imagegen_mastery.cli:main"
+
+[tool.setuptools]
+packages = {find = {include = ["imagegen_mastery*"]}}
