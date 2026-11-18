@@ -25,3 +25,11 @@ Use one row per observable feature. Give each reference a short local identifier
     Smallest proposed change:
 
 Review each generation independently. Keep observations out of the final positive description if repeating the defect would encourage it. Store source imagery only when authorized. Provider prompts can disclose descriptive details even when no image is uploaded.
+
+## Map sources to decisions before sending them
+
+For each supplied file record its role and whether the current agent could actually open it. Separately record whether the generator will receive its pixels. An agent may be able to see three references while the selected generator accepts one. Describe the remaining visible anchors as text and disclose the reduced reference coverage. A description alone cannot verify identity.
+
+For a character reference, distinguish persistent features (hair part, jaw silhouette, collar fastening) from the state of this shot (smile, head turn, wind). For clothing, name a seam, closure or overlap that can be found again. For the camera, identify eye level, near-to-far size changes and the side of the face visible. For lighting, follow a cast shadow or highlight to infer a likely source, and label that inference. Sample a color relationship in similarly lit regions before deciding that a new frame changed the wardrobe.
+
+For a style reference, translate one visible decision at each scale that matters: large value groups, edge transitions and mark spacing at delivery size. If B supplies brushwork, a tree appearing in B need not enter the scene. When A and B disagree on a feature, follow the user's assigned role; clarify only unresolved conflicts that affect the deliverable.

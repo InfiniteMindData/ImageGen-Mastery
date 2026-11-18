@@ -90,3 +90,18 @@ class PromptTests(unittest.TestCase):
         path = Path(__file__).resolve().parents[1] / "examples" / "brief.json"
         brief = json.loads(path.read_text(encoding="utf-8"))
         self.assertIn(brief["intent"], optimize(brief))
+
+    def test_creative_options_guide_generation_without_becoming_requirements(self):
+        from imagegen_mastery.prompt import review_requirements
+        brief = {"intent": "Make a lantern icon.", "constraints": ["Exactly one lantern."],
+                 "creative_options": ["A dark handle could separate it from the backdrop."]}
+        self.assertIn("Optional artistic choices", optimize(brief))
+        self.assertIn(brief["creative_options"][0], optimize(brief))
+        self.assertEqual(review_requirements(brief), ["Make a lantern icon.", "Exactly one lantern."])
+
+    def test_creative_options_validate_and_empty_list_preserves_legacy_prompt(self):
+        brief = {"intent": "An ink sketch."}
+        self.assertEqual(optimize({**brief, "creative_options": []}), optimize(brief))
+        for value in ("wide crop", [""], [3]):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "creative_options"):
+                optimize({**brief, "creative_options": value})

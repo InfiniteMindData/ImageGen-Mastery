@@ -62,7 +62,7 @@ def optimize(brief: dict) -> str:
     Raise ValueError with the field location when the brief is malformed.
     """
     directions = ("composition", "style", "lighting")
-    optional = (*directions, "constraints", "avoid", "references", "revisions", "locked_attributes")
+    optional = (*directions, "constraints", "avoid", "references", "revisions", "locked_attributes", "creative_options")
     _object(brief, "brief", ("intent",), optional)
     sections = [_text(brief["intent"], "intent")]
     for key in directions:
@@ -70,7 +70,8 @@ def optimize(brief: dict) -> str:
             sections.append(f"{key.capitalize()}\n{_text(brief[key], key)}")
     sections.extend(_reference_notes(brief.get("references", [])))
     for key, title in (("constraints", "Requirements"), ("avoid", "Exclude these elements"),
-                       ("locked_attributes", "Preserve these locked attributes")):
+                       ("locked_attributes", "Preserve these locked attributes"),
+                       ("creative_options", "Optional artistic choices (use only if they serve the requirements)")):
         lines = [
             "- " + _text(item, f"{key}[{index}]")
             for index, item in _items(brief.get(key, []), key)

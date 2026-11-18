@@ -1,10 +1,26 @@
 # ImageGen-Mastery
 
-A Python CLI and agent skill for compiling image briefs, editing with reference pixels, inspecting candidates and reviewing changes. Prompt compilation, measurements and comparison reports run offline. Provider calls are optional.
+An AI image-generation skill for agents that create, edit or critique images. The agent uses its existing image tools. Start with [SKILL.md](SKILL.md) and load the visual guides that fit the request. The core workflow needs no Python installation or provider credentials.
 
-## Try the offline workflow
+## Use the skill
 
-From the checkout, use Python 3.10 or newer.
+Place the checkout in your agent's supported skills directory under the name `imagegen-mastery`. Keep its subdirectories together. In a host that can read files but has no skill discovery, ask the agent to follow `SKILL.md` directly. The host supplies viewing and image creation capabilities.
+
+Try a short request such as “Make a lantern icon for a Roblox inventory. It needs to read at 48 pixels.” The skill guides the agent to choose a readable silhouette, generate with an available tool, and inspect the handle opening at the intended size. For an edit, attach the source and specify what should change. For prompt help alone, ask for the prompt.
+
+| Where to start | What it contains |
+| --- | --- |
+| [SKILL.md](SKILL.md) | Intent, workflow selection, tool use, inspection and stopping rules |
+| [Visual references](references/reference-review.md) | Source roles, visible anchors, uncertainty and preservation |
+| [Prompt direction](references/prompt-direction.md) | Converting a short request into concrete visual choices |
+| [Photo editing](references/photo-editing.md) | Portrait realism, materials, relighting, clothing and background changes |
+| [Foundations](references/visual-foundations.md) and [medium workflows](references/workflows.md) | Composition, photography, cinematography, illustration, 3D and game assets |
+| [Worked scenarios](examples/agent-scenarios.md) | A small icon, a portrait edit and a three-shot sequence |
+| `imagegen_mastery/` and `tests/` | Optional Python tools and offline regression checks |
+
+## Optional Python toolkit
+
+Use Python 3.10 or newer when you want executable measurements, repeatable briefs or provider adapters.
 
 ```sh
 python -m venv .venv
@@ -85,9 +101,9 @@ Add `--denoise` for median filtering. Upscaling interpolates pixels, denoising c
 
 `inspect` sends previews of up to 1024 pixels per side. It returns a completed inspection only after receiving a valid model response grounded in those submitted images. Its confidence is self-reported. Incomplete or refused responses fail without producing findings.
 
-## Agent skill and development
+## Development
 
-To use the skill, copy or symlink the checkout into the agent's skills directory under `imagegen-mastery`. Keep the [skill](SKILL.md), [reference review protocol](references/reference-review.md), [visual foundations](references/visual-foundations.md), [medium workflows](references/workflows.md) and examples together. Install the CLI in the agent's Python environment.
+The optional compiler renders the fields supplied by the author. An agent can write a brief after using the skill to reason about the request. Use `constraints` for mandatory conditions and `creative_options` for suggestions. Suggestions appear in the generation prompt and are excluded from the inspection requirement list.
 
 ```sh
 python -m unittest discover -s tests -v
