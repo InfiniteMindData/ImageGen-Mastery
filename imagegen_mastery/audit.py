@@ -1,6 +1,6 @@
 """Offline, evidence-based candidate selection and delivery checks."""
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -9,6 +9,8 @@ from PIL import Image, ImageChops, ImageDraw, ImageOps, ImageStat
 
 from .evaluation import MAX_PIXELS, MAX_SIDE, load_image
 from .metrics import measure_pair
+from .inspection import valid_bounds
+from .localization import pixel_box
 
 
 @dataclass(frozen=True)
@@ -17,6 +19,7 @@ class DeliveryPolicy:
     require_transparency: bool = False
     max_reference_mae: float | None = None
     max_tile_seam: float | None = None
+    protected_regions: tuple[tuple[float, ...], ...] = ()
 
     def validate(self, reference: Path | None) -> None:
         if self.expected_size is not None:
@@ -27,8 +30,10 @@ class DeliveryPolicy:
         for value in (self.max_reference_mae, self.max_tile_seam):
             if value is not None and (type(value) not in (int, float) or not 0 <= value <= 1):
                 raise ValueError("Thresholds must be finite numbers between zero and one.")
-        if self.max_reference_mae is not None and reference is None:
-            raise ValueError("A reference threshold requires a reference image.")
+        if (self.max_reference_mae is not None or self.protected_regions) and reference is None:
+            raise ValueError("Reference thresholds and protected regions require a reference image.")
+        if not all(valid_bounds(list(bounds)) for bounds in self.protected_regions):
+            raise ValueError("Protected regions must be nonempty normalized xyxy rectangles.")
 
 
 def _on_background(image: Image.Image, color: str) -> Image.Image:
@@ -108,6 +113,15 @@ def audit_candidates(candidates, directory: Path, *, reference: Path | None = No
                     comparison.update(white)
                     comparison["dual_background_mae"] = max(white["rgb_mae"], black["rgb_mae"])
                 row["reference"] = comparison
+                if policy.protected_regions:
+                    matches = []
+                    for bounds in policy.protected_regions:
+                        box = pixel_box(rgba.size, bounds)
+                        # Include alpha and even hidden RGB: a pixel-exact lock is stricter than appearance.
+                        exact = rgba.size == baseline.size and rgba.crop(box).tobytes() == baseline.crop(box).tobytes()
+                        matches.append({"bounds": list(bounds), "exact_match": exact})
+                    row["protected_regions"] = matches
+                    checks["protected_regions"] = all(item["exact_match"] for item in matches)
                 if policy.max_reference_mae is not None:
                     checks["reference_mae"] = same_aspect and comparison["dual_background_mae"] <= policy.max_reference_mae
             if tile or policy.max_tile_seam is not None:
@@ -136,6 +150,7 @@ def audit_candidates(candidates, directory: Path, *, reference: Path | None = No
         else:
             ranked = []
         report = {"schema_version": 1, "reference": baseline_info, "candidates": rows,
+                  "policy": json.loads(json.dumps(asdict(policy))), "tile_preview_requested": tile,
                   "reference_similarity_order": [row["index"] for row in ranked],
                   "visual_review": "unassessed",
                   "limitations": [
@@ -144,6 +159,7 @@ def audit_candidates(candidates, directory: Path, *, reference: Path | None = No
                       "Dual-background MAE is the larger black/white composite error; SSIM and dHash use white.",
                       "Opposite-edge MAE is a seam heuristic; inspect repeats at native scale and in the target engine.",
                       "Transparency requires at least one nonopaque and one nontransparent pixel; it does not verify cutout quality.",
+                      "Protected regions require identical dimensions and exact decoded RGBA, including hidden RGB.",
                       "Contact sheet and tile previews are reduced to bounded sizes; inspect originals for fine detail."
                   ]}
         sheet.save(tmp / "contact-sheet.png")

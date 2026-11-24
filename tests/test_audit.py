@@ -89,3 +89,25 @@ class AuditTests(unittest.TestCase):
         out = self.root / "out"
         self.assertEqual(main(["audit", str(a), "--output-dir", str(out), "--require-transparency"]), 2)
         self.assertTrue((out / "audit.json").is_file())
+
+    def test_protected_region_requires_exact_rgba_and_dimensions(self):
+        ref = self.image("ref.png", "red")
+        allowed = self.image("allowed.png", "red")
+        forbidden = self.image("forbidden.png", "red")
+        for path, box in ((allowed, (8, 0, 16, 16)), (forbidden, (0, 0, 8, 16))):
+            with Image.open(path) as image:
+                copy = image.copy()
+            copy.paste((0, 0, 255, 255), box)
+            copy.save(path)
+        policy = DeliveryPolicy(protected_regions=((0, 0, .5, 1),))
+        result = audit_candidates([allowed, forbidden], self.root / "out", reference=ref, policy=policy)
+        self.assertEqual([r["status"] for r in result["candidates"]], ["passed", "failed"])
+        self.assertEqual(result["policy"]["protected_regions"], [[0, 0, .5, 1]])
+        self.assertEqual(result["reference_similarity_order"], [1])
+
+    def test_protected_regions_need_reference_and_valid_bounds(self):
+        a = self.image("a.png", "red")
+        for ref, bounds in ((None, (0, 0, 1, 1)), (a, (.5, 0, .1, 1))):
+            with self.assertRaises(ValueError):
+                audit_candidates([a], self.root / "out", reference=ref,
+                                 policy=DeliveryPolicy(protected_regions=(bounds,)))

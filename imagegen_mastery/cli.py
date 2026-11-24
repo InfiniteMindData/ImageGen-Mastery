@@ -49,6 +49,8 @@ def main(argv=None):
     audit.add_argument("--max-reference-mae", type=float)
     audit.add_argument("--tile", action="store_true", help="include opposite-edge measurements and 3x3 preview")
     audit.add_argument("--max-tile-seam", type=float)
+    audit.add_argument("--protect-region", type=float, nargs=4, action="append", default=[],
+                       metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"))
     vision = commands.add_parser("inspect", help="inspect actual pixels via a paid vision model")
     vision.add_argument("image", type=Path)
     vision.add_argument("--brief", type=Path)
@@ -112,7 +114,8 @@ def main(argv=None):
             print(args.output_dir / "report.html")
         elif args.command == "audit":
             policy = DeliveryPolicy(tuple(args.expected_size) if args.expected_size else None,
-                                    args.require_transparency, args.max_reference_mae, args.max_tile_seam)
+                                    args.require_transparency, args.max_reference_mae, args.max_tile_seam,
+                                    tuple(tuple(region) for region in args.protect_region))
             result = audit_candidates(args.candidates, args.output_dir, reference=args.reference,
                                       policy=policy, tile=args.tile)
             print(json.dumps(result, indent=2))
