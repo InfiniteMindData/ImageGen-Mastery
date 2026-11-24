@@ -39,6 +39,7 @@ Open `sign-report/report.html`. The original fixtures differ in the color of one
 | `optimize BRIEF` | Deterministic text preserving user constraints, literal wording, reference notes and locks | Offline |
 | `evaluate IMAGE [--reference PATH]` | Original JSON measurements, 4×4 changed-region ranking and manual rubric | Offline |
 | `report IMAGE --reference PATH --output-dir NEW` | Local report bundle. Optional block SSIM, difference hash, OCR and normalized regions | Offline |
+| `audit IMAGE [IMAGE ...] --output-dir NEW` | Offline candidate contact sheet, delivery gates, transparency statistics, optional tile repeats and reference comparison | Offline |
 | `capabilities` | Model names, local input limits, size, ratio, quality, mask support and contract links | Offline |
 | `enhance SOURCE --output NEW.png` | Optional local upscale, noise reduction and sharpening, also available as a ComfyUI node | Offline |
 | `profiles` | Budgeted revision models and per-call USD reservations by operation | Offline |
@@ -84,6 +85,19 @@ Put semantic locks in `locked_attributes`. For an exact pixel lock, pass a repea
 `--expected-size WIDTH HEIGHT` and repeatable `--require-text OPEN` add acceptance checks before each paid inspection. A failed check stops the run, including when the starting image already fails. OCR requires local English Tesseract and can misread lettering. The saved `vNNN.checks.json` records the result. Revised candidates are checked against the previous frame outside the edit box and against the initial frame inside protected regions, including alpha. A provider proposal with different dimensions is rejected before compositing. Model confidence remains uncalibrated. Human review is still needed for likeness, style and other semantic requirements.
 
 The run directory contains the brief and settings in `manifest.json`, the submitted generation/edit prompts, reference snapshots, all original provider versions, localized candidates and per-version inspection JSON. `accepted` identifies the most recently reviewed usable candidate, which can still have outstanding defects at a budget or iteration stop. A null value means no candidate passed the acceptance checks. A failed run retains its evidence and reservations. The CLI refuses to reuse the directory.
+
+## Production QA and candidate selection
+
+The [production playbook](references/production-quality.md) provides visual contracts, asset-specific acceptance checks and a candidate selection workflow for agents using any available image tool.
+
+```sh
+imagegen-mastery audit examples/fixtures/candidate.png examples/fixtures/reference.png \
+  --reference examples/fixtures/reference.png --output-dir candidate-audit
+imagegen-mastery audit texture.png --tile --max-tile-seam 0.1 --output-dir tile-audit
+imagegen-mastery audit icon.png --expected-size 512 512 --require-transparency --output-dir icon-audit
+```
+
+Open `contact-sheet.png` to compare candidates on light and dark backgrounds. `audit.json` contains input hashes, explicit gates, alpha statistics and optional alignment metrics. The optional `--max-reference-mae` threshold uses the larger of white- and black-composite RGB errors; candidates with different aspect ratios are not ranked. `--tile` adds opposing-edge measurements and reduced 3×3 repeat previews. Thresholds are user-selected heuristics, not guarantees of visual quality. Exit 2 means at least one candidate failed a requested gate (the evidence is still saved), exit 1 means an input or execution error, and exit 0 means no requested gate failed. Without gates, delivery status is unassessed. Inspect originals at delivery and native size.
 
 ## Local enhancement
 

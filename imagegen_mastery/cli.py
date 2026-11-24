@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .acceptance import EditPolicy
+from .audit import DeliveryPolicy, audit_candidates
 from .capabilities import ImageSettings, capabilities
 from .editing import render
 from .evaluation import evaluate
@@ -39,6 +40,15 @@ def main(argv=None):
     report.add_argument("--require-text", action="append", default=[])
     report.add_argument("--region", type=float, nargs=4, action="append", default=[],
                         metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"))
+    audit = commands.add_parser("audit", help="offline candidate comparison and delivery QA")
+    audit.add_argument("candidates", type=Path, nargs="+")
+    audit.add_argument("--reference", type=Path)
+    audit.add_argument("--output-dir", type=Path, required=True)
+    audit.add_argument("--expected-size", type=int, nargs=2, metavar=("WIDTH", "HEIGHT"))
+    audit.add_argument("--require-transparency", action="store_true")
+    audit.add_argument("--max-reference-mae", type=float)
+    audit.add_argument("--tile", action="store_true", help="include opposite-edge measurements and 3x3 preview")
+    audit.add_argument("--max-tile-seam", type=float)
     vision = commands.add_parser("inspect", help="inspect actual pixels via a paid vision model")
     vision.add_argument("image", type=Path)
     vision.add_argument("--brief", type=Path)
@@ -100,6 +110,14 @@ def main(argv=None):
             make_report(args.image, args.reference, args.output_dir, ssim=args.ssim, perceptual=args.perceptual,
                         regions=args.region, required_text=args.require_text)
             print(args.output_dir / "report.html")
+        elif args.command == "audit":
+            policy = DeliveryPolicy(tuple(args.expected_size) if args.expected_size else None,
+                                    args.require_transparency, args.max_reference_mae, args.max_tile_seam)
+            result = audit_candidates(args.candidates, args.output_dir, reference=args.reference,
+                                      policy=policy, tile=args.tile)
+            print(json.dumps(result, indent=2))
+            if any(row["status"] == "failed" for row in result["candidates"]):
+                return 2
         elif args.command == "inspect":
             brief = json.loads(args.brief.read_text(encoding="utf-8")) if args.brief else {"intent": "Inspect visible rendering defects."}
             optimize(brief)

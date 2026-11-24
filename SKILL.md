@@ -35,6 +35,10 @@ Write the shortest instruction that would change the picture in the intended way
 
 Keep hard requirements separate from suggestions. Keep exact lettering intact. For an edit, lead with the visual change, identify its location, then name the important locks. Avoid restating the entire source image. Use the [prompt examples](references/prompt-direction.md) for ambiguous briefs, [visual foundations](references/visual-foundations.md) for composition and materials, [photo and scene editing](references/photo-editing.md) for realism, and [medium workflows](references/workflows.md) for illustration, cinematic scenes, 3D, game art and Roblox.
 
+## Production workflows and candidate selection
+
+For a production asset, close reference match or multi-image job, use the [production playbook](references/production-quality.md). Establish the visual contract (deliverable, nonnegotiable requirements, reference roles, locks and acceptance evidence). Use the relevant asset-specific checks instead of generic quality words. For multiple authorized candidates, reject hard failures before comparing aesthetics. Keep candidate IDs and the best accepted version. The optional offline audit can check dimensions, alpha and tile edges, build contact sheets, and compare aligned references; none of those checks substitutes for looking at the actual images.
+
 ## Inspect, revise and stop
 
 - Open the returned pixels. At delivery size check subject, action, silhouette, framing, readability and overall style. At detail scale inspect relevant anatomy, contact points, lighting, material response, text and edge artifacts. Compare each locked reference feature in a comparable view. If viewing is unavailable, deliver the artifact with visual review pending.
